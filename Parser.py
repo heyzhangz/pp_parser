@@ -226,6 +226,35 @@ class SentenceParser():
 
         return dlocs
 
+    def _findConjWord(self, wloc, depRes):
+        """
+            找全部conj关系的并列词, 包含两种情况:
+            1. 一是作为起始词, 在governor关系中找
+            2. 二是作为后续词, 在自己的关系中找到起始词, 再进行第一步
+
+            ! 暂不考虑递归查找
+        """
+        conjlocs = []
+
+        # 找起始词
+        start = wloc
+        if depRes[wloc]["dep"] == "conj":
+            start = depRes[wloc]["govloc"]
+            conjlocs.append(start)
+        
+        # 从起始词找后续关系
+        for idx, item in enumerate(depRes):
+
+            govloc = item["govloc"]
+            dep = item["dep"]
+
+            if govloc != start or dep != "conj" or idx == wloc:
+                continue
+            
+            conjlocs.append(idx)
+
+        return conjlocs
+
     def _findPhraseEnd(self, loc, depRes):
         """
             根据某个词查找完整短语结束位置, 目前暂时考虑使用这个词前后到最近governor位置做截断
@@ -279,16 +308,21 @@ class SentenceParser():
         """
 
         res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+        
+        for conjloc in conjlocs:
+            dep = depRes[conjloc]["dep"].split(':')[0]
+            if dep not in PATTERN_1_DEP_LIST:
+                return res
 
-        dep = depRes[keyloc]["dep"].split(':')[0]
-        if dep not in PATTERN_1_DEP_LIST:
-            return res
+            deploc = depRes[conjloc]["govloc"]
+            finloc = self._findPhraseEnd(deploc, depRes)
+            phrase = self._getPhrase(deploc, finloc, depRes)
 
-        deploc = depRes[keyloc]["govloc"]
-        finloc = self._findPhraseEnd(deploc, depRes)
-        phrase = self._getPhrase(deploc, finloc, depRes)
-
-        res.append([depRes[keyloc]["dependent"], phrase, depRes[keyloc]["dep"], depRes[keyloc]["dependent"], "pattern_1"])
+            res.append([depRes[keyloc]["dependent"], phrase, 
+                        depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
+                        "pattern_1", depRes[conjloc]["dependent"]])
 
         return res
     
@@ -323,29 +357,34 @@ class SentenceParser():
             条件: 暂时通用, 目前发现的PI关系为以上6种
         """
         res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
 
-        fvlocs = self._parseFinVerb(keyloc, depRes)
-        if len(fvlocs) == 0:
-            return res
-
-        for fvloc in fvlocs:
-            deplocs = self._parseDepWord(fvloc, depRes)
-            if len(deplocs) == 0:
+        for conjloc in conjlocs:
+            fvlocs = self._parseFinVerb(conjloc, depRes)
+            if len(fvlocs) == 0:
                 return res
-                
-            for deploc in deplocs:
 
-                if deploc in fvlocs:
-                    continue
-                
-                dep = depRes[deploc]["dep"].split(':')[0]
-                if dep not in PATTERN_2_DEP_LIST:
-                    continue
+            for fvloc in fvlocs:
+                deplocs = self._parseDepWord(fvloc, depRes)
+                if len(deplocs) == 0:
+                    return res
+                    
+                for deploc in deplocs:
 
-                finloc = self._findPhraseEnd(deploc, depRes)
-                phrase = self._getPhrase(deploc, finloc, depRes)
-                # PI, scene, findep, finverb, pattern
-                res.append([depRes[keyloc]["dependent"], phrase, depRes[deploc]["dep"], depRes[fvloc]["dependent"], "pattern_2"])
+                    if deploc in fvlocs:
+                        continue
+                    
+                    dep = depRes[deploc]["dep"].split(':')[0]
+                    if dep not in PATTERN_2_DEP_LIST:
+                        continue
+
+                    finloc = self._findPhraseEnd(deploc, depRes)
+                    phrase = self._getPhrase(deploc, finloc, depRes)
+                    # PI, scene, findep, finverb, patterns
+                    res.append([depRes[keyloc]["dependent"], phrase, 
+                                depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
+                                "pattern_2", depRes[conjloc]["dependent"]])
 
         return res
 
@@ -359,21 +398,26 @@ class SentenceParser():
             条件: nmod关系
         """
         res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
 
-        deplocs = self._parseDepWord(keyloc, depRes)
-        if len(deplocs) == 0:
-            return res
+        for conjloc in conjlocs:        
+            deplocs = self._parseDepWord(conjloc, depRes)
+            if len(deplocs) == 0:
+                return res
 
-        for deploc in deplocs:
+            for deploc in deplocs:
 
-            dep = depRes[deploc]["dep"].split(':')[0]
-            if not dep in PATTERN_3_DEP_LIST:
-                continue
-            
-            finloc = self._findPhraseEnd(deploc, depRes)
-            phrase = self._getPhrase(deploc, finloc, depRes)
+                dep = depRes[deploc]["dep"].split(':')[0]
+                if not dep in PATTERN_3_DEP_LIST:
+                    continue
+                
+                finloc = self._findPhraseEnd(deploc, depRes)
+                phrase = self._getPhrase(deploc, finloc, depRes)
 
-            res.append([depRes[keyloc]["dependent"], phrase, depRes[deploc]["dep"], depRes[keyloc]["dependent"], "pattern_3"])
+                res.append([depRes[keyloc]["dependent"], phrase, 
+                            depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
+                            "pattern_3", depRes[conjloc]["dependent"]])
 
         return res
 
@@ -428,7 +472,9 @@ if __name__ == "__main__":
     # ts = r"Microphone, for recording voices in the videos."
     # ts = r"Recording Call, Microphone"
     # ts = r"Microphone; for detecting your voice and command,"
-    ts = r"Used for accessing the camera or capturing images and video from the device."
+    # ts = r"Used for accessing the camera or capturing images and video from the device."
+    # ts = r"The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms."
+    ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
 
     res = senParser.parseSentence(ts)
     
