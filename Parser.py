@@ -372,7 +372,7 @@ class SentenceParser():
                     
                 for deploc in deplocs:
 
-                    if deploc in fvlocs:
+                    if deploc in fvlocs or deploc in conjlocs:
                         continue
                     
                     dep = depRes[deploc]["dep"].split(':')[0]
@@ -457,7 +457,7 @@ class SentenceParser():
 if __name__ == "__main__":
 
     senParser = SentenceParser()    
-    # ts = r"we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices."
+    ts = r"we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices."
     # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
     # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
     # ts = r"The app needs access to the camera to fulfill recording videos."
@@ -474,7 +474,7 @@ if __name__ == "__main__":
     # ts = r"Microphone; for detecting your voice and command,"
     # ts = r"Used for accessing the camera or capturing images and video from the device."
     # ts = r"The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms."
-    ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
+    # ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
 
     res = senParser.parseSentence(ts)
     
