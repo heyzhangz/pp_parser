@@ -6,7 +6,7 @@ from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
 
 PERM_KEYWORD_LIST = ["contact", "address book",
-                     "camera", "microphone", "record_audio"
+                     "camera", "microphone", "record_audio",
                      "location", "longitude", "latitude", "GPS",
                      "SMS", "phone"]
 
@@ -89,7 +89,6 @@ class DepParser():
                       addSpaces(dep, 16),
                       addSpaces("[%d](%s, %s)" % (governorloc, governor, governorpos), 28)))
 
-        
         return resstr
     pass
 
@@ -103,15 +102,14 @@ def addSpaces(s, length):
 def isCompound(relation):
     """
        组合关系, 相邻两个词可以组合为短语.
-       目前将两个类型算作组合:
+       目前将一个类型算作组合:
        1. compound(and its subtype)
-       2. amod
     """
     if relation.startswith("compound"):
         return True
     
-    if relation == "amod":
-        return True
+    # if relation == "amod":
+    #     return True
 
     return False
 
@@ -478,6 +476,8 @@ if __name__ == "__main__":
     # ts = r"Used for accessing the camera or capturing images and video from the device."
     # ts = r"The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms."
     # ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
+    # ts = r"If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually."
+    # ts = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
 
     # res = senParser.parseSentence(ts)
     
@@ -485,44 +485,50 @@ if __name__ == "__main__":
     # for e in res:
     #     print(e)
 
-    with open(r"./sentences.json", 'r', encoding="utf-8") as f:
-    # with open(r"./test.json", 'r', encoding="utf-8") as f:
-        allSens = json.load(f)
+    # ds = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
+    # depParser = DepParser()
+    
+    # res = depParser.parse(ds)
+    # print(depParser.prettyRes(res))
 
-    with open(r"./dep_sentence.txt", 'w', encoding="utf-8") as f:
-        index = 0
-        resDict = []
-        for section in allSens:
-            for item in section:
-                sentence = item["sentences"]
-                scene = item["view"]
-                pi = item["privacy"]
+    # with open(r"./sentences.json", 'r', encoding="utf-8") as f:
+    # # with open(r"./test.json", 'r', encoding="utf-8") as f:
+    #     allSens = json.load(f)
 
-                res = senParser.parseSentence(sentence)
-                parseRes = senParser.depParser.prettyRes(senParser.depRes)
+    # with open(r"./dep_sentence.txt", 'w', encoding="utf-8") as f:
+    #     index = 0
+    #     resDict = []
+    #     for section in allSens:
+    #         for item in section:
+    #             sentence = item["sentences"]
+    #             scene = item["view"]
+    #             pi = item["privacy"]
+
+    #             res = senParser.parseSentence(sentence)
+    #             parseRes = senParser.depParser.prettyRes(senParser.depRes)
         
-                resDict.append({
-                    "scene": scene,
-                    "PI": pi,
-                    "sentence": sentence,
-                    "parse": res,
-                    "dep": parseRes
-                })
+    #             resDict.append({
+    #                 "scene": scene,
+    #                 "PI": pi,
+    #                 "sentence": sentence,
+    #                 "parse": res,
+    #                 "dep": parseRes
+    #             })
 
-                # write
-                f.write("%s. %s\n" % (str(index), sentence))
-                f.write("\n")
-                f.write("%s -> %s\n" % (str(pi), str(scene)))
-                f.write("\n")
-                for e in res:
-                    # f.write("%s -> %s, %s, %s, %s" % (e[0], e[1], e[2], e[3], e[4]))
-                    f.write("%s -> %s,\t%s,\t%s,\t%s\t%s\n" % tuple(e))
-                f.write("\n")
-                f.write(parseRes)
-                f.write("\n=====================\n\n")
-                index += 1
+    #             # write
+    #             f.write("%s. %s\n" % (str(index), sentence))
+    #             f.write("\n")
+    #             f.write("%s -> %s\n" % (str(pi), str(scene)))
+    #             f.write("\n")
+    #             for e in res:
+    #                 # f.write("%s -> %s, %s, %s, %s" % (e[0], e[1], e[2], e[3], e[4]))
+    #                 f.write("%s -> %s,\t%s,\t%s,\t%s\t%s\n" % tuple(e))
+    #             f.write("\n")
+    #             f.write(parseRes)
+    #             f.write("\n=====================\n\n")
+    #             index += 1
 
             
     
-    with open(r"./dep_sentence.json", 'w', encoding="utf-8") as f:
-        json.dump(resDict, f, indent=4)
+    # with open(r"./dep_sentence.json", 'w', encoding="utf-8") as f:
+    #     json.dump(resDict, f, indent=4)
