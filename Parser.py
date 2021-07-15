@@ -315,7 +315,7 @@ class SentenceParser():
         for conjloc in conjlocs:
             dep = depRes[conjloc]["dep"].split(':')[0]
             if dep not in PATTERN_1_DEP_LIST:
-                return res
+                continue
 
             deploc = depRes[conjloc]["govloc"]
             finloc = self._findPhraseEnd(deploc, depRes)
@@ -364,12 +364,12 @@ class SentenceParser():
         for conjloc in conjlocs:
             fvlocs = self._parseFinVerb(conjloc, depRes)
             if len(fvlocs) == 0:
-                return res
+                continue
 
             for fvloc in fvlocs:
                 deplocs = self._parseDepWord(fvloc, depRes)
                 if len(deplocs) == 0:
-                    return res
+                    continue
                     
                 for deploc in deplocs:
 
@@ -405,7 +405,7 @@ class SentenceParser():
         for conjloc in conjlocs:        
             deplocs = self._parseDepWord(conjloc, depRes)
             if len(deplocs) == 0:
-                return res
+                continue
 
             for deploc in deplocs:
 
@@ -478,6 +478,7 @@ if __name__ == "__main__":
     # ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
     # ts = r"If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually."
     # ts = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
+    # ts = r"including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor"
 
     # res = senParser.parseSentence(ts)
     
