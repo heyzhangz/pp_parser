@@ -5,7 +5,10 @@ from nltk.parse import corenlp
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
 
-PERM_KEYWORD_LIST = ["contact", "camera", "microphone", "address book"]
+PERM_KEYWORD_LIST = ["contact", "address book",
+                     "camera", "microphone", "record_audio"
+                     "location", "longitude", "latitude", "GPS",
+                     "SMS", "phone"]
 
 PATTERN_1_DEP_LIST = ["obl", "appos"]
 PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "ccomp", "obj", "nsubj"]
@@ -457,7 +460,7 @@ class SentenceParser():
 if __name__ == "__main__":
 
     senParser = SentenceParser()    
-    ts = r"we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices."
+    # ts = r"we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices."
     # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
     # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
     # ts = r"The app needs access to the camera to fulfill recording videos."
@@ -476,50 +479,50 @@ if __name__ == "__main__":
     # ts = r"The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms."
     # ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
 
-    res = senParser.parseSentence(ts)
+    # res = senParser.parseSentence(ts)
     
-    print(senParser.depParser.prettyRes(senParser.depRes))
-    for e in res:
-        print(e)
+    # print(senParser.depParser.prettyRes(senParser.depRes))
+    # for e in res:
+    #     print(e)
 
-    # with open(r"./sentences.json", 'r', encoding="utf-8") as f:
-    # # with open(r"./test.json", 'r', encoding="utf-8") as f:
-    #     allSens = json.load(f)
+    with open(r"./sentences.json", 'r', encoding="utf-8") as f:
+    # with open(r"./test.json", 'r', encoding="utf-8") as f:
+        allSens = json.load(f)
 
-    # with open(r"./dep_sentence.txt", 'w', encoding="utf-8") as f:
-    #     index = 0
-    #     resDict = []
-    #     for section in allSens:
-    #         for item in section:
-    #             sentence = item["sentences"]
-    #             scene = item["view"]
-    #             pi = item["privacy"]
+    with open(r"./dep_sentence.txt", 'w', encoding="utf-8") as f:
+        index = 0
+        resDict = []
+        for section in allSens:
+            for item in section:
+                sentence = item["sentences"]
+                scene = item["view"]
+                pi = item["privacy"]
 
-    #             res = senParser.parseSentence(sentence)
-    #             parseRes = senParser.depParser.prettyRes(senParser.depRes)
+                res = senParser.parseSentence(sentence)
+                parseRes = senParser.depParser.prettyRes(senParser.depRes)
         
-    #             resDict.append({
-    #                 "scene": scene,
-    #                 "PI": pi,
-    #                 "sentence": sentence,
-    #                 "parse": res,
-    #                 "dep": parseRes
-    #             })
+                resDict.append({
+                    "scene": scene,
+                    "PI": pi,
+                    "sentence": sentence,
+                    "parse": res,
+                    "dep": parseRes
+                })
 
-    #             # write
-    #             f.write("%s. %s\n" % (str(index), sentence))
-    #             f.write("\n")
-    #             f.write("%s -> %s\n" % (str(pi), str(scene)))
-    #             f.write("\n")
-    #             for e in res:
-    #                 # f.write("%s -> %s, %s, %s, %s" % (e[0], e[1], e[2], e[3], e[4]))
-    #                 f.write("%s -> %s,\t%s,\t%s,\t%s\n" % tuple(e))
-    #             f.write("\n")
-    #             f.write(parseRes)
-    #             f.write("\n=====================\n\n")
-    #             index += 1
+                # write
+                f.write("%s. %s\n" % (str(index), sentence))
+                f.write("\n")
+                f.write("%s -> %s\n" % (str(pi), str(scene)))
+                f.write("\n")
+                for e in res:
+                    # f.write("%s -> %s, %s, %s, %s" % (e[0], e[1], e[2], e[3], e[4]))
+                    f.write("%s -> %s,\t%s,\t%s,\t%s\t%s\n" % tuple(e))
+                f.write("\n")
+                f.write(parseRes)
+                f.write("\n=====================\n\n")
+                index += 1
 
             
     
-    # with open(r"./dep_sentence.json", 'w', encoding="utf-8") as f:
-    #     json.dump(resDict, f, indent=4)
+    with open(r"./dep_sentence.json", 'w', encoding="utf-8") as f:
+        json.dump(resDict, f, indent=4)
