@@ -5,7 +5,9 @@ from nltk.parse import corenlp
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
 
-PERM_KEYWORD_LIST = ["contact", "camera"]
+PERM_KEYWORD_LIST = ["contact", "camera", "microphone", "address book"]
+
+PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "ccomp", "obj", "nsubj"]
 
 def getPos(postag):
 
@@ -194,6 +196,7 @@ class SentenceParser():
 
     def _parseFinVerb(self, nloc, depRes):
         
+        fvlocs = []
         govloc = depRes[nloc]["govloc"]
         govpos = depRes[govloc]["pos"]
         dep = depRes[govloc]["dep"]
@@ -204,10 +207,11 @@ class SentenceParser():
             govpos = depRes[govloc]["pos"]
             dep = depRes[govloc]["dep"]
             
-        if getPos(depRes[nloc]["pos"]) != wordnet.VERB:
-            return -1
-
-        return nloc
+            if getPos(depRes[nloc]["pos"]) == wordnet.VERB or \
+               getPos(depRes[nloc]["pos"]) == wordnet.NOUN:
+               fvlocs.append(nloc)
+                
+        return fvlocs
 
     def _parseDepWord(self, wloc, depRes):
         
@@ -283,37 +287,58 @@ class SentenceParser():
     
     def _pattern2(self, keyloc, depRes):
         """
-            case: Permission to access contact information is used when you search contacts in JVSTUDIOS search bar.
+            case(advcl): Permission to access contact information is used when you search contacts in JVSTUDIOS search bar.
             4  (contact, NN) compound [5](information, NN)
             10 (search, VBP) advcl    [7](used, VBN)
 
-            case: The app needs access to the camera to fulfill recording videos.
+            case(xcomp): The app needs access to the camera to fulfill recording videos.
             7 (camera, NN)   nmod  [4](access, NN)
             9 (fulfill, VB)  xcomp [3](needs, VBZ)
 
+            case(obl): The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms.
+            4 (microphone, NNS) nsubj [5](enable, VBP)
+            8 (navigation, NN)  obl [5](enable, VBP)
+
+            case(ccomp): Some features like searching a contact from the search bar require access to your Address book.
+            11 (require, VBP) ccomp  [4](searching, VBG)
+            16 (book, NN)     nmod   [12](access, NN)
+
+            case(obj): Microphone, To enable voice command related actions.
+            1 (microphone, NN)                   nsubj  [4](enable, VB)
+            5 (voice command relate action, NNS) obj    [4](enable, VB)
+
+            case(nsubj:pass): Voice control features will only be enabled if you affirmatively activate voice controls by giving us access to the microphone on your device.
+            1  (voice control feature, NNS) nsubj:pass  [5](enable, VBN)
+            17 (microphone, NN)             nmod        [14](access, NN)
+
             利用PI找到依赖动词, 利用依赖动词找到场景动词
 
-            条件: 暂时通用, 目前发现的PI关系为advcl和xcomp
+            条件: 暂时通用, 目前发现的PI关系为以上6种
         """
         res = []
 
-        # TODO 后面pattern成熟了替换掉
-        if depRes[keyloc]["dep"] == "obl":
+        fvlocs = self._parseFinVerb(keyloc, depRes)
+        if len(fvlocs) == 0:
             return res
 
-        fvloc = self._parseFinVerb(keyloc, depRes)
-        if fvloc == -1:
-            return res
+        for fvloc in fvlocs:
+            deplocs = self._parseDepWord(fvloc, depRes)
+            if len(deplocs) == 0:
+                return res
+                
+            for deploc in deplocs:
 
-        deplocs = self._parseDepWord(fvloc, depRes)
-        if len(deplocs) == 0:
-            return res
-            
-        for deploc in deplocs:
-            finloc = self._findPhraseEnd(deploc, depRes)
-            phrase = self._getPhrase(deploc, finloc, depRes)
-            # PI, scene, findep, finverb, pattern
-            res.append([depRes[keyloc]["dependent"], phrase, depRes[deploc]["dep"], depRes[fvloc]["dependent"], "pattern_2"])
+                if deploc in fvlocs:
+                    continue
+                
+                dep = depRes[deploc]["dep"].split(':')[0]
+                if dep not in PATTERN_2_DEP_LIST:
+                    continue
+
+                finloc = self._findPhraseEnd(deploc, depRes)
+                phrase = self._getPhrase(deploc, finloc, depRes)
+                # PI, scene, findep, finverb, pattern
+                res.append([depRes[keyloc]["dependent"], phrase, depRes[deploc]["dep"], depRes[fvloc]["dependent"], "pattern_2"])
 
         return res
 
@@ -333,9 +358,7 @@ class SentenceParser():
         for keyloc in keylocs:
             
             tmpres = self._pattern1(keyloc, depRes)
-            if len(tmpres) > 0:
-                res.extend(tmpres)
-                continue
+            res.extend(tmpres)
 
             tmpres = self._pattern2(keyloc, depRes)
             res.extend(tmpres)
@@ -351,43 +374,62 @@ class SentenceParser():
     pass
 
 if __name__ == "__main__":
-    
+
+    senParser = SentenceParser()    
     # ts = r"we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices."
     # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
-    ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
+    # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
     # ts = r"The app needs access to the camera to fulfill recording videos."
+    # ts = r"If granted permission by a user, we use access to a phone's microphone to facilitate voice enabled search queries. All interaction and access to the microphone is user initiated and voice queries are not shared with third party apps or providers."
+    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
+    # ts = r"including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor."
+    # ts = r"Voice control features will only be enabled if you affirmatively activate voice controls by giving us access to the microphone on your device."
+    ts = r"The app needs access to the camera to fulfill recording videos."
 
-    senParser = SentenceParser()
     res = senParser.parseSentence(ts)
     
     print(senParser.depParser.prettyRes(senParser.depRes))
-
     for e in res:
         print(e)
 
-    # for g, d, dt in res.triples():
-    #     print("%s(%s, %s) (%s, %s)" % (addSpaces(d), g[0], g[1], dt[0], dt[1]))
-
     # with open(r"./sentences.json", 'r', encoding="utf-8") as f:
+    # # with open(r"./test.json", 'r', encoding="utf-8") as f:
     #     allSens = json.load(f)
 
-    # for section in allSens:
-    #     for item in section:
-    #         sentence = item["sentences"]
-    #         scene = item["view"]
-    #         pi = item["privacy"]
+    # with open(r"./dep_sentence.txt", 'w', encoding="utf-8") as f:
+    #     index = 0
+    #     resDict = []
+    #     for section in allSens:
+    #         for item in section:
+    #             sentence = item["sentences"]
+    #             scene = item["view"]
+    #             pi = item["privacy"]
 
-    #         parseRes = depParser.parse(sentence)
-    #         dep = []
-    #         for g, d, dt in parseRes.triples():
-    #             dep.append("%s(%s, %s) (%s, %s)" % (addSpaces(d), g[0], g[1], dt[0], dt[1]))
-    
-    #         resDict.append({
-    #             "scene": scene,
-    #             "PI": pi,
-    #             "sentence": sentence,
-    #             "dep": dep
-    #         })
+    #             res = senParser.parseSentence(sentence)
+    #             parseRes = senParser.depParser.prettyRes(senParser.depRes)
+        
+    #             resDict.append({
+    #                 "scene": scene,
+    #                 "PI": pi,
+    #                 "sentence": sentence,
+    #                 "parse": res,
+    #                 "dep": parseRes
+    #             })
+
+    #             # write
+    #             f.write("%s. %s\n" % (str(index), sentence))
+    #             f.write("\n")
+    #             f.write("%s -> %s\n" % (str(pi), str(scene)))
+    #             f.write("\n")
+    #             for e in res:
+    #                 # f.write("%s -> %s, %s, %s, %s" % (e[0], e[1], e[2], e[3], e[4]))
+    #                 f.write("%s -> %s,\t%s,\t%s,\t%s\n" % tuple(e))
+    #             f.write("\n")
+    #             f.write(parseRes)
+    #             f.write("\n=====================\n\n")
+    #             index += 1
+
+            
     
     # with open(r"./dep_sentence.json", 'w', encoding="utf-8") as f:
     #     json.dump(resDict, f, indent=4)
