@@ -7,7 +7,9 @@ from nltk.stem import WordNetLemmatizer
 
 PERM_KEYWORD_LIST = ["contact", "camera", "microphone", "address book"]
 
+PATTERN_1_DEP_LIST = ["obl", "appos"]
 PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "ccomp", "obj", "nsubj"]
+PATTERN_3_DEP_LIST = ["nmod", "obl"]
 
 def getPos(postag):
 
@@ -265,16 +267,21 @@ class SentenceParser():
 
     def _pattern1(self, keyloc, depRes):
         """
-            case: Images recorded by cameras fitted to Sky's engineer vans.
+            case(obl): Images recorded by cameras fitted to Sky's engineer vans.
             4 (cameras, NNS) obl [2](recorded, VBN)
+
+            case(appos): Recording Call, Microphone
+            3 (microphone, NNP) appos [1](recording call, NNP) 
 
             利用PI直接找到场景动词
             
-            条件: PI的依赖关系为 obl
+            条件: PI的依赖关系为以上两种
         """
 
         res = []
-        if depRes[keyloc]["dep"] != "obl":
+
+        dep = depRes[keyloc]["dep"].split(':')[0]
+        if dep not in PATTERN_1_DEP_LIST:
             return res
 
         deploc = depRes[keyloc]["govloc"]
@@ -342,6 +349,33 @@ class SentenceParser():
 
         return res
 
+    def _pattern3(self, keyloc, depRes):
+        """
+            case(nmod): When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Microphone, for recording voices in the videos.
+            32 (record voice, NNS) nmod [29](microphone, NNP)
+
+            利用PI做governor来直接找到对应的场景
+
+            条件: nmod关系
+        """
+        res = []
+
+        deplocs = self._parseDepWord(keyloc, depRes)
+        if len(deplocs) == 0:
+            return res
+
+        for deploc in deplocs:
+
+            dep = depRes[deploc]["dep"].split(':')[0]
+            if not dep in PATTERN_3_DEP_LIST:
+                continue
+            
+            finloc = self._findPhraseEnd(deploc, depRes)
+            phrase = self._getPhrase(deploc, finloc, depRes)
+
+            res.append([depRes[keyloc]["dependent"], phrase, depRes[deploc]["dep"], depRes[keyloc]["dependent"], "pattern_3"])
+
+        return res
 
     def parseDepRes(self, depRes):
         
@@ -361,6 +395,9 @@ class SentenceParser():
             res.extend(tmpres)
 
             tmpres = self._pattern2(keyloc, depRes)
+            res.extend(tmpres)
+
+            tmpres = self._pattern3(keyloc, depRes)
             res.extend(tmpres)
 
         return res
@@ -384,7 +421,14 @@ if __name__ == "__main__":
     # ts = r"Some features like searching a contact from the search bar require access to your Address book."
     # ts = r"including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor."
     # ts = r"Voice control features will only be enabled if you affirmatively activate voice controls by giving us access to the microphone on your device."
-    ts = r"The app needs access to the camera to fulfill recording videos."
+    # ts = r"The app needs access to the camera to fulfill recording videos."
+    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
+    # ts = r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Microphone, for recording voices in the videos."
+    # ts = r"We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: â· Microphone permissions: for video shooting and editingï¼"
+    # ts = r"Microphone, for recording voices in the videos."
+    # ts = r"Recording Call, Microphone"
+    # ts = r"Microphone; for detecting your voice and command,"
+    ts = r"Used for accessing the camera or capturing images and video from the device."
 
     res = senParser.parseSentence(ts)
     
