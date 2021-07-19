@@ -165,6 +165,10 @@ class SentenceParser():
                 locMap[idx] = gloc
                 # 更新gov
                 depRes[gloc]["dependent"] = "%s %s" % (dependent, depRes[gloc]["dependent"])
+                # and 情况下 compound 补充：本身为名词且前面为名词有compound
+                for index in range(gloc,len(depRes)):
+                    if depRes[index]["dep"] == "conj" and depRes[index]["govloc"] == gloc and depRes[index]["pos"] == depRes[gloc]["pos"] and getPos(depRes[gloc]["pos"]) == wordnet.NOUN:
+                        depRes[index]["dependent"] = "%s %s" % (dependent, depRes[index]["dependent"])
         
         # 更新全部loc信息
         delta = 0
@@ -280,8 +284,103 @@ class SentenceParser():
             
             if finloc != loc:
                 break
+        
+        # 补全动词后面的名词
+        while getPos(depRes[finloc]["pos"]) == wordnet.VERB :
+            newloc = finloc
+            distEnd = 1
+            for dist in range(1, len(depRes)):
+
+                left = newloc - dist
+                right = newloc + dist
+
+                if left >= 0:
+                    govloc = depRes[left]["govloc"]
+                    if govloc == newloc and not isInvalidPos(depRes[left]["pos"]):
+                        finloc = left
+                
+                if right < len(depRes):
+                    govloc = depRes[right]["govloc"]
+                    if govloc == newloc and not isInvalidPos(depRes[right]["pos"]):
+                        finloc = right
+                
+                if finloc != newloc:
+                    break
+                if dist == len(depRes) - 1:
+                    distEnd = dist
+            if distEnd == len(depRes) - 1:
+                break
 
         return finloc
+
+    # 处理连词问题
+    def _getWholePhrase(self, start, end, depRes):
+        if start > end:
+            start, end = end, start
+
+        # if getPos(depRes[finloc]["pos"]) == wordnet.VERB and depRes[finloc]["dep"] == "amod":
+        #     govloc = depRes[finloc]["govloc"]
+        #     if not isInvalidPos(depRes[govloc]["pos"]):
+        #         finloc = govloc
+
+        # 寻找目前词组内是否含有连词  一层连词
+        last = end
+        for dist in range(start, end + 1):
+            for idx in range(dist, len(depRes)):
+                govloc = depRes[idx]["govloc"]
+                dep = depRes[idx]["dep"]
+                if govloc == dist and dep == "conj" and idx > last:
+                    last = idx
+        finloc = last
+        
+        # 有一个错误例子的匹配  or to enter search term  到enter结束后 补全动词
+        while getPos(depRes[finloc]["pos"]) == wordnet.VERB :
+            newloc = finloc
+            distEnd = 1
+            for dist in range(1, len(depRes)):
+
+                left = newloc - dist
+                right = newloc + dist
+
+                if left >= 0:
+                    govloc = depRes[left]["govloc"]
+                    if govloc == newloc and not isInvalidPos(depRes[left]["pos"]):
+                        distEnd = len(depRes) - 1
+                        break
+                
+                if right < len(depRes):
+                    govloc = depRes[right]["govloc"]
+                    if govloc == newloc and not isInvalidPos(depRes[right]["pos"]):
+                        finloc = right
+                
+                if finloc != newloc:
+                    break
+                if dist == len(depRes) - 1:
+                    distEnd = dist
+            if distEnd == len(depRes) - 1:
+                break
+
+        # 补全之后第二层并列  第二层连词
+        conjEnd = finloc
+        for dist in range(last, finloc + 1):
+            for idx in range(dist, len(depRes)):
+                govloc = depRes[idx]["govloc"]
+                dep = depRes[idx]["dep"]
+                if govloc == dist and dep == "conj" and idx > conjEnd:
+                    conjEnd = idx
+        finloc = conjEnd
+
+        # 介词抓取
+        if finloc + 1 < len(depRes):
+            # 只考虑via 和 during
+            if depRes[finloc + 1]["dependent"] == "via" or depRes[finloc + 1]["dependent"] == "during":
+                govloc = depRes[finloc + 1]["govloc"]
+                if finloc < govloc:
+                    finloc = govloc
+
+        end = finloc
+
+        return start,end
 
     def _getPhrase(self, start, end, depRes):
         
@@ -291,7 +390,26 @@ class SentenceParser():
             start, end = end, start
 
         for idx in range(start, end + 1):
-            phrase.append(depRes[idx]["dependent"])
+            if depRes[idx]["pos"] == "," or depRes[idx]["dep"] == "cc":
+                phrase.append("@#$%^&")
+            else:
+                # 连词 分开
+                if depRes[idx]["dep"] == "conj":
+                    # 找到第一个连词
+                    conjs = depRes[idx]["govloc"]
+                    # 补全： 本身是名词 补全两种：前面的compond（在一开始时完成） 前面的动词或者介词词组
+                    # 连词后面补全暂时不考虑
+                    if getPos(depRes[conjs]["pos"]) == wordnet.NOUN and getPos(depRes[idx]["pos"]) == wordnet.NOUN:
+                        # obj 为前面有动词的情况 或者 介词词组 nmod 的情况
+                        if (depRes[conjs]["dep"] == "obj" and getPos(depRes[depRes[conjs]["govloc"]]["pos"]) == wordnet.VERB) or depRes[conjs]["dep"] == "nmod": 
+                            for idx2 in range(depRes[conjs]["govloc"], conjs):
+                                # 排除：microphone permission : for recording …… 这种前面介词词组的误差  这里介词只允许是of
+                                if depRes[idx2]["pos"] == "IN" and depRes[idx2]["dependent"] != "of" or depRes[idx2]["dep"] == "punct":
+                                    phrase = phrase[:(depRes[conjs]["govloc"] - idx2)]
+                                    break
+                                else:
+                                    phrase.append(depRes[idx2]["dependent"])
+                phrase.append(depRes[idx]["dependent"])
         
         return ' '.join(phrase)
 
@@ -319,11 +437,16 @@ class SentenceParser():
 
             deploc = depRes[conjloc]["govloc"]
             finloc = self._findPhraseEnd(deploc, depRes)
+            deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
             phrase = self._getPhrase(deploc, finloc, depRes)
-
-            res.append([depRes[keyloc]["dependent"], phrase, 
+            phrases = phrase.split('@#$%^&')
+            phrases = [i.strip() for i in phrases if(len(str(i))!=0)]
+            res.append([depRes[keyloc]["dependent"], phrases, 
                         depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
                         "pattern_1", depRes[conjloc]["dependent"]])
+            # res.append([depRes[keyloc]["dependent"], phrase, 
+            #             depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
+            #             "pattern_1", depRes[conjloc]["dependent"]])
 
         return res
     
@@ -381,11 +504,14 @@ class SentenceParser():
                         continue
 
                     finloc = self._findPhraseEnd(deploc, depRes)
+                    deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
                     phrase = self._getPhrase(deploc, finloc, depRes)
                     # PI, scene, findep, finverb, patterns
-                    res.append([depRes[keyloc]["dependent"], phrase, 
-                                depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
-                                "pattern_2", depRes[conjloc]["dependent"]])
+                    phrases = phrase.split('@#$%^&')
+                    phrases = [i.strip() for i in phrases if(len(str(i))!=0)]
+                    res.append([depRes[keyloc]["dependent"], phrases, 
+                                    depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
+                                    "pattern_2", depRes[conjloc]["dependent"]])
 
         return res
 
@@ -413,10 +539,20 @@ class SentenceParser():
                 if not dep in PATTERN_3_DEP_LIST:
                     continue
                 
+                #  为何提取要拆分成两部分
+                #  When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos.
+                #  camera 定位到photo 则 要从shoot到videos 需要两边都修改，所以要能返回两个值
                 finloc = self._findPhraseEnd(deploc, depRes)
+                deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
                 phrase = self._getPhrase(deploc, finloc, depRes)
 
-                res.append([depRes[keyloc]["dependent"], phrase, 
+                # res.append([depRes[keyloc]["dependent"], phrase, 
+                #             depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
+                #             "pattern_3", depRes[conjloc]["dependent"]])
+                phrases = phrase.split('@#$%^&')
+                phrases = [i.strip() for i in phrases if(len(str(i))!=0)]
+                
+                res.append([depRes[keyloc]["dependent"], phrases, 
                             depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
                             "pattern_3", depRes[conjloc]["dependent"]])
 
@@ -458,7 +594,24 @@ class SentenceParser():
 if __name__ == "__main__":
 
     senParser = SentenceParser()    
-    # ts = r"we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices."
+    # ts = r"If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually."
+    # ts = r"The app accesses the contacts on the phone in order to display the contacts and so the app can record or ignore calls from specific contacts."
+    # ts = r"We display all the phone calls in the phone list in the form of lists, and you can dial the phone directly in the message center. In order to make you use this function normally, we need to get call record information to implement the display and edit management of the call record list, including the telephone number, the way to call (the incoming calls, the unanswered calls, the dialed and rejected calls), and the time of the call. Meanwhile, in order to help you quickly select contacts in dialing, we need to read your address book contact information."
+    # ts = r"The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms. Learn more about voice data collection."
+    # ts = r"If granted permission by a user, My Home Screen Apps uses access to a device's microphone to facilitate voice-enabled search queries and may access your deviceâs camera, photos, media, and other files."
+    # ts = r"We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates."
+    # ts = r"We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: Microphone permissions: for video shooting and editing."
+    # ts = r"Take pictures and videos absurd Labs need this permission to use your phone's camera to take pictures and videos."
+    # ts = r"This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
+
+
+    # ts = r"The microphone also enables voice commands for control of the console, game, or app, or to enter search terms."
+    # ts = r"Using your microphone for making note via voice."
+    # ts =r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos."
+    # ts =r"We access the microphone on your device (with your permission) to record audio messages and deliver sound during video calls."
+    # ts = r"With your prior consent we will be allowed to use the microphone for songs immediate identification and lyrics synchronization."
+
+
     # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
     # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
     # ts = r"The app needs access to the camera to fulfill recording videos."
@@ -479,11 +632,16 @@ if __name__ == "__main__":
     # ts = r"If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually."
     # ts = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
 
-    # res = senParser.parseSentence(ts)
+    # ts =r"Bestie only collects and uses your personal information out of the following purposes hereby specified in this policy: When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Microphone, for recording voices in the videos."
+
+    ts = r"If the user wishes to use the Services which include location features, such as the recording of a trail or of a point of interest or the navigation through a downloaded trail, the Services may imply the processing of the location of the user, which will be used for the purposes established hereunder and to allow or improve the Service."
+    # ts = r"Location data provided via the Licenced Application is for basic navigational purposes only."
+
+    res = senParser.parseSentence(ts)
     
-    # print(senParser.depParser.prettyRes(senParser.depRes))
-    # for e in res:
-    #     print(e)
+    print(senParser.depParser.prettyRes(senParser.depRes))
+    for e in res:
+        print(e)
 
     # ds = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
     # depParser = DepParser()
@@ -492,41 +650,44 @@ if __name__ == "__main__":
     # print(depParser.prettyRes(res))
 
     # with open(r"./sentences.json", 'r', encoding="utf-8") as f:
-    # # with open(r"./test.json", 'r', encoding="utf-8") as f:
+    # with open(r"../test.json", 'r', encoding="utf-8") as f:
     #     allSens = json.load(f)
 
-    # with open(r"./dep_sentence.txt", 'w', encoding="utf-8") as f:
+    # with open(r"./dep_sentence_3.txt", 'w', encoding="utf-8") as f:
     #     index = 0
     #     resDict = []
-    #     for section in allSens:
-    #         for item in section:
-    #             sentence = item["sentences"]
-    #             scene = item["view"]
-    #             pi = item["privacy"]
+    #     for item in allSens:
+    #         # for item in section:
+    #         sentence = item["sentence"]
+    #         scene = item["scene"]
+    #         pi = item["PI"]
 
-    #             res = senParser.parseSentence(sentence)
-    #             parseRes = senParser.depParser.prettyRes(senParser.depRes)
-        
-    #             resDict.append({
-    #                 "scene": scene,
-    #                 "PI": pi,
-    #                 "sentence": sentence,
-    #                 "parse": res,
-    #                 "dep": parseRes
-    #             })
+    #         res = senParser.parseSentence(sentence)
+    #         parseRes = senParser.depParser.prettyRes(senParser.depRes)
 
-    #             # write
-    #             f.write("%s. %s\n" % (str(index), sentence))
-    #             f.write("\n")
-    #             f.write("%s -> %s\n" % (str(pi), str(scene)))
-    #             f.write("\n")
-    #             for e in res:
+    #         resDict.append({
+    #             "scene": scene,
+    #             "PI": pi,
+    #             "sentence": sentence,
+    #             "parse": res,
+    #             "dep": parseRes
+    #         })
+
+    #         # write
+    #         f.write("%s. %s\n" % (str(index), sentence))
+    #         f.write("\n")
+    #         f.write("%s -> %s\n" % (str(pi), str(scene)))
+    #         f.write("\n")
+    #         for e in res:
     #                 # f.write("%s -> %s, %s, %s, %s" % (e[0], e[1], e[2], e[3], e[4]))
+    #             try:
     #                 f.write("%s -> %s,\t%s,\t%s,\t%s\t%s\n" % tuple(e))
-    #             f.write("\n")
-    #             f.write(parseRes)
-    #             f.write("\n=====================\n\n")
-    #             index += 1
+    #             except:
+    #                 f.write("error:"+ str(e))
+    #         f.write("\n")
+    #         f.write(parseRes)
+    #         f.write("\n=====================\n\n")
+    #         index += 1
 
             
     
