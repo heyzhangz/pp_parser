@@ -11,8 +11,10 @@ PERM_KEYWORD_LIST = ["contact", "address book",
                      "SMS", "phone"]
 
 PATTERN_1_DEP_LIST = ["obl", "appos"]
-PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "ccomp", "obj", "nsubj"]
+PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "obj", "nsubj", "conj"]
 PATTERN_3_DEP_LIST = ["nmod", "obl"]
+# TODO pattern_4
+PATTERN_4_DEP_LIST = ["ccomp"]
 
 def getPos(postag):
 
@@ -201,7 +203,10 @@ class SentenceParser():
                     break
         return res
 
-    def _parseFinVerb(self, nloc, depRes):
+    def _parseGovFinVerb(self, nloc, depRes):
+        """
+            input_verb --> fin_verb
+        """
         
         fvlocs = []
         govloc = depRes[nloc]["govloc"]
@@ -433,7 +438,7 @@ class SentenceParser():
         for conjloc in conjlocs:
             dep = depRes[conjloc]["dep"].split(':')[0]
             if dep not in PATTERN_1_DEP_LIST:
-                return res
+                continue
 
             deploc = depRes[conjloc]["govloc"]
             finloc = self._findPhraseEnd(deploc, depRes)
@@ -464,10 +469,6 @@ class SentenceParser():
             4 (microphone, NNS) nsubj [5](enable, VBP)
             8 (navigation, NN)  obl [5](enable, VBP)
 
-            case(ccomp): Some features like searching a contact from the search bar require access to your Address book.
-            11 (require, VBP) ccomp  [4](searching, VBG)
-            16 (book, NN)     nmod   [12](access, NN)
-
             case(obj): Microphone, To enable voice command related actions.
             1 (microphone, NN)                   nsubj  [4](enable, VB)
             5 (voice command relate action, NNS) obj    [4](enable, VB)
@@ -485,14 +486,14 @@ class SentenceParser():
         conjlocs.append(keyloc)
 
         for conjloc in conjlocs:
-            fvlocs = self._parseFinVerb(conjloc, depRes)
+            fvlocs = self._parseGovFinVerb(conjloc, depRes)
             if len(fvlocs) == 0:
-                return res
+                continue
 
             for fvloc in fvlocs:
                 deplocs = self._parseDepWord(fvloc, depRes)
                 if len(deplocs) == 0:
-                    return res
+                    continue
                     
                 for deploc in deplocs:
 
@@ -531,7 +532,7 @@ class SentenceParser():
         for conjloc in conjlocs:        
             deplocs = self._parseDepWord(conjloc, depRes)
             if len(deplocs) == 0:
-                return res
+                continue
 
             for deploc in deplocs:
 
@@ -613,7 +614,6 @@ if __name__ == "__main__":
 
 
     # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
-    # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
     # ts = r"The app needs access to the camera to fulfill recording videos."
     # ts = r"If granted permission by a user, we use access to a phone's microphone to facilitate voice enabled search queries. All interaction and access to the microphone is user initiated and voice queries are not shared with third party apps or providers."
     # ts = r"Some features like searching a contact from the search bar require access to your Address book."
@@ -631,11 +631,11 @@ if __name__ == "__main__":
     # ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
     # ts = r"If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually."
     # ts = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
-
-    # ts =r"Bestie only collects and uses your personal information out of the following purposes hereby specified in this policy: When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Microphone, for recording voices in the videos."
-
-    ts = r"If the user wishes to use the Services which include location features, such as the recording of a trail or of a point of interest or the navigation through a downloaded trail, the Services may imply the processing of the location of the user, which will be used for the purposes established hereunder and to allow or improve the Service."
-    # ts = r"Location data provided via the Licenced Application is for basic navigational purposes only."
+    # ts = r"including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor"
+    # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
+    # ts = r"Used to give sites ability to ask users to utilize microphone and used to provide voice search feature."
+    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
+    ts = r"Some features like searching a contact from the search bar require access to your Address book."
 
     res = senParser.parseSentence(ts)
     
@@ -644,6 +644,7 @@ if __name__ == "__main__":
         print(e)
 
     # ds = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
+    # ds = r"the sharing and referral tools"
     # depParser = DepParser()
     
     # res = depParser.parse(ds)
@@ -689,7 +690,5 @@ if __name__ == "__main__":
     #         f.write("\n=====================\n\n")
     #         index += 1
 
-            
-    
     # with open(r"./dep_sentence.json", 'w', encoding="utf-8") as f:
     #     json.dump(resDict, f, indent=4)
