@@ -138,6 +138,7 @@ class SentenceParser():
         """
             预处理依存关系结果:
             1. 合并全部**相邻**compound/amod关系, 包括sub-compund
+            2. 如果 compound + 名词 + 连词 + 名词 的格式 会转化成 compound + 名词 + 连词 + compound + 名词
         """
 
         if not depRes:
@@ -290,8 +291,8 @@ class SentenceParser():
             if finloc != loc:
                 break
         
-        # 补全动词后面的名词
-        while getPos(depRes[finloc]["pos"]) == wordnet.VERB :
+        # 补全动词后面的名词   RP 指类似 give up 这种的词  出现的很少暂不考虑 · 
+        while getPos(depRes[finloc]["pos"]) == wordnet.VERB:
             newloc = finloc
             distEnd = 1
             for dist in range(1, len(depRes)):
@@ -336,6 +337,8 @@ class SentenceParser():
                 dep = depRes[idx]["dep"]
                 if govloc == dist and dep == "conj" and idx > last:
                     last = idx
+                if depRes[idx]["dependent"]  == "/" and idx > last:
+                    last = idx + 1
         finloc = last
         
         # 有一个错误例子的匹配  or to enter search term  到enter结束后 补全动词
@@ -395,7 +398,7 @@ class SentenceParser():
             start, end = end, start
 
         for idx in range(start, end + 1):
-            if depRes[idx]["pos"] == "," or depRes[idx]["dep"] == "cc":
+            if (depRes[idx]["pos"] == "," and depRes[idx]["dependent"] != "/") or depRes[idx]["dep"] == "cc":
                 phrase.append("@#$%^&")
             else:
                 # 连词 分开
@@ -413,6 +416,14 @@ class SentenceParser():
                                     phrase = phrase[:(depRes[conjs]["govloc"] - idx2)]
                                     break
                                 else:
+                                    phrase.append(depRes[idx2]["dependent"])
+                        else:
+                            # 还有一种情况是前面是动词 但是amod 格式 组合  有两种解决方案 一种和compound一样在前面合并 一种在这里找到
+                            isAmod = 0
+                            for idx2 in range(depRes[conjs]["govloc"], conjs):
+                                if depRes[idx2]["dep"] == "amod" and depRes[idx2]["govloc"] == conjs and conjs - idx2 <=2:
+                                    isAmod = 1
+                                if isAmod == 1:
                                     phrase.append(depRes[idx2]["dependent"])
                 phrase.append(depRes[idx]["dependent"])
         
@@ -636,7 +647,9 @@ if __name__ == "__main__":
     # ts = r"Used to give sites ability to ask users to utilize microphone and used to provide voice search feature."
     # ts = r"Some features like searching a contact from the search bar require access to your Address book."
     ts = r"Some features like searching a contact from the search bar require access to your Address book."
+    ts = r"Camera; for taking selfies and pictures using voice."
 
+    res = senParser.parseSentence(ts)  
     res = senParser.parseSentence(ts)
     
     print(senParser.depParser.prettyRes(senParser.depRes))
@@ -651,10 +664,10 @@ if __name__ == "__main__":
     # print(depParser.prettyRes(res))
 
     # with open(r"./sentences.json", 'r', encoding="utf-8") as f:
-    # with open(r"../test.json", 'r', encoding="utf-8") as f:
+    # with open(r"../test2.json", 'r', encoding="utf-8") as f:
     #     allSens = json.load(f)
 
-    # with open(r"./dep_sentence_3.txt", 'w', encoding="utf-8") as f:
+    # with open(r"./dep_sentence_test2_1.txt", 'w', encoding="utf-8") as f:
     #     index = 0
     #     resDict = []
     #     for item in allSens:
