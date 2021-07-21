@@ -129,6 +129,11 @@ def isInvalidPos(pos):
 
     return False
 
+def hashTuple(res):
+    # 计算分析二元组的hash值
+    text = res[0] + str(res[1]) + str(res[3])
+    return hash(text)
+
 class SentenceParser():
 
     def __init__(self):
@@ -733,16 +738,30 @@ class SentenceParser():
         if len(keylocs) == 0:
             return res
         
+        readyRes = set()
         for keyloc in keylocs:
             
-            tmpres = self._pattern1(keyloc, depRes)
-            res.extend(self.filter(tmpres))
+            tmpres = self.filter(self._pattern1(keyloc, depRes))
 
-            tmpres = self._pattern2(keyloc, depRes)
-            res.extend(self.filter(tmpres))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
 
-            tmpres = self._pattern3(keyloc, depRes)
-            res.extend(self.filter(tmpres))
+            tmpres = self.filter(self._pattern2(keyloc, depRes))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
+
+            tmpres = self.filter(self._pattern3(keyloc, depRes))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
 
         return res
 
@@ -800,9 +819,12 @@ if __name__ == "__main__":
     # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
     # ts = r"Used to give sites ability to ask users to utilize microphone and used to provide voice search feature."
     # ts = r"Some features like searching a contact from the search bar require access to your Address book."
+    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
     # ts = r"Camera; for taking selfies and pictures using voice."
+    ts = r"For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings."
 
-    res = senParser.parseSentence(ts)  
+    # res = senParser.parseSentence(ts)  
+    res = senParser.parseSentence(ts)
     
     print(senParser.depParser.prettyRes(senParser.depRes))
     for e in res:
