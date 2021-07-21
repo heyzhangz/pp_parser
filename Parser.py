@@ -1,9 +1,12 @@
+from json import decoder
 import nltk
 import json
+from nltk.corpus.reader.wordnet import VERB
 from nltk.tokenize import WordPunctTokenizer
 from nltk.parse import corenlp
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
+from requests.models import parse_header_links
 
 PERM_KEYWORD_LIST = ["contact", "address book",
                      "camera", "microphone", "record_audio",
@@ -15,6 +18,10 @@ PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "obj", "nsubj", "conj"]
 PATTERN_3_DEP_LIST = ["nmod", "obl"]
 # TODO pattern_4
 PATTERN_4_DEP_LIST = ["ccomp"]
+
+FIFLTER_PATTERN = ["PRP","PRP$"]
+# FIFLTER_PRP_WORDS = ["we","you","he","she","they","it"]
+# FIFLTER_PRPS_WORDS = ["our","your","his","her","their","its"]
 
 def getPos(postag):
 
@@ -367,6 +374,20 @@ class SentenceParser():
                     distEnd = dist
             if distEnd == len(depRes) - 1:
                 break
+        
+        # if getPos(depRes[finloc]["pos"]) == wordnet.VERB and getPos(depRes[depRes[finloc]["govloc"]]["pos"]) == wordnet.VERB and depRes[finloc]["dep"] == "conj":
+        #     conjsgovloc = depRes[finloc]["govloc"]
+        #     newloc = finloc
+        #     for dist in range(finloc + 1, len(depRes)):
+        #         right = dist
+                
+        #         if right < len(depRes):
+        #             govloc = depRes[right]["govloc"]
+        #             if govloc == conjsgovloc and not isInvalidPos(depRes[right]["pos"]):
+        #                 finloc = right
+                
+        #         if finloc != newloc:
+        #             break
 
         # 补全之后第二层并列  第二层连词
         conjEnd = finloc
@@ -390,6 +411,53 @@ class SentenceParser():
 
         return start,end
 
+    def _isConj(self, idx,depRes):
+        isConj = 0
+        if (depRes[idx]["pos"] == "," and depRes[idx]["dependent"] != "/"):        
+            for dist in range(idx, len(depRes)):
+                if depRes[dist]["dep"] == "cc":
+                    break
+                elif depRes[dist]['dep'] == "conj":
+                    isConj = dist
+                    break       
+        elif depRes[idx]["dep"] == "cc":
+            isConj = 1
+
+        return isConj
+            
+
+    def _conjsType(self,start,end,depRes):
+        types = {}
+        indexs = set()
+        for idx in range(start, end + 1):
+            isConj = self._isConj(idx,depRes)
+            if isConj !=0:
+                if isConj ==1:
+                    govloc = depRes[idx]['govloc']
+                    # 找到第一个连词
+                    conjsloc = depRes[govloc]['govloc']
+                else:
+                    conjsloc = depRes[idx]['govloc']
+                    govloc = isConj
+                # 词性相同才考虑补全
+                if getPos(depRes[govloc]['pos']) == getPos(depRes[conjsloc]['pos']):
+                    # 动词并列考虑后宾语补全
+                    if getPos(depRes[govloc]['pos']) == wordnet.VERB:
+                        for idx2 in range(idx + 1,len(depRes)):
+                            # 找宾语
+                            if getPos(depRes[idx2]['pos']) == wordnet.NOUN and depRes[idx2]['govloc'] == conjsloc:
+                                types[conjsloc] = idx2
+                                types[govloc] = idx2
+                                indexs.add(conjsloc)
+                                indexs.add(govloc)
+                                break
+                    # 名词并列
+                    if getPos(depRes[govloc]['pos']) == wordnet.NOUN:
+                            types[govloc] = 1
+                            indexs.add(govloc)
+        return types,indexs 
+
+
     def _getPhrase(self, start, end, depRes):
         
         phrase = []
@@ -397,35 +465,103 @@ class SentenceParser():
         if start > end:
             start, end = end, start
 
+        types,indexs = self._conjsType(start,end,depRes)
+
+        # 不存在并列
+        if len(indexs) == 0:
+            for idx in range(start, end + 1):
+                if (depRes[idx]["pos"] == "," and depRes[idx]["dependent"] != "/") or depRes[idx]["dep"] == "cc":
+                    phrase.append("@#$%^&")
+                else:
+                    phrase.append(depRes[idx]["dependent"])
+            return ' '.join(phrase)
+
+        # 存在并列
         for idx in range(start, end + 1):
             if (depRes[idx]["pos"] == "," and depRes[idx]["dependent"] != "/") or depRes[idx]["dep"] == "cc":
                 phrase.append("@#$%^&")
             else:
-                # 连词 分开
-                if depRes[idx]["dep"] == "conj":
-                    # 找到第一个连词
+                # 名词的情况，本身是名词 补全两种：前面的compond（在一开始时完成） 前面的动词或者介词词组
+                if idx in indexs and types[idx] == 1:
                     conjs = depRes[idx]["govloc"]
-                    # 补全： 本身是名词 补全两种：前面的compond（在一开始时完成） 前面的动词或者介词词组
-                    # 连词后面补全暂时不考虑
-                    if getPos(depRes[conjs]["pos"]) == wordnet.NOUN and getPos(depRes[idx]["pos"]) == wordnet.NOUN:
-                        # obj 为前面有动词的情况 或者 介词词组 nmod 的情况
-                        if (depRes[conjs]["dep"] == "obj" and getPos(depRes[depRes[conjs]["govloc"]]["pos"]) == wordnet.VERB) or depRes[conjs]["dep"] == "nmod": 
-                            for idx2 in range(depRes[conjs]["govloc"], conjs):
-                                # 排除：microphone permission : for recording …… 这种前面介词词组的误差  这里介词只允许是of
-                                if depRes[idx2]["pos"] == "IN" and depRes[idx2]["dependent"] != "of" or depRes[idx2]["dep"] == "punct":
-                                    phrase = phrase[:(depRes[conjs]["govloc"] - idx2)]
-                                    break
-                                else:
-                                    phrase.append(depRes[idx2]["dependent"])
-                        else:
-                            # 还有一种情况是前面是动词 但是amod 格式 组合  有两种解决方案 一种和compound一样在前面合并 一种在这里找到
-                            isAmod = 0
-                            for idx2 in range(depRes[conjs]["govloc"], conjs):
-                                if depRes[idx2]["dep"] == "amod" and depRes[idx2]["govloc"] == conjs and conjs - idx2 <=2:
-                                    isAmod = 1
-                                if isAmod == 1:
-                                    phrase.append(depRes[idx2]["dependent"])
-                phrase.append(depRes[idx]["dependent"])
+                    # obj 为前面有动词的情况 或者 介词词组 nmod 的情况
+                    if (depRes[conjs]["dep"] == "obj" and getPos(depRes[depRes[conjs]["govloc"]]["pos"]) == wordnet.VERB) or depRes[conjs]["dep"] == "nmod": 
+                        for idx2 in range(depRes[conjs]["govloc"], conjs):
+                            # 排除：microphone permission : for recording …… 这种前面介词词组的误差  这里介词只允许是of
+                            if depRes[idx2]["pos"] == "IN" and depRes[idx2]["dependent"] != "of" or depRes[idx2]["dep"] == "punct":
+                                phrase = phrase[:(depRes[conjs]["govloc"] - idx2)]
+                                break
+                            else:
+                                phrase.append(depRes[idx2]["dependent"])
+                    else:
+                        # 还有一种情况是前面是动词 但是amod 格式 组合  有两种解决方案 一种和compound一样在前面合并 一种在这里找到
+                        isAmod = 0
+                        for idx2 in range(depRes[conjs]["govloc"], conjs):
+                            if depRes[idx2]["dep"] == "amod" and depRes[idx2]["govloc"] == conjs and conjs - idx2 <=2:
+                                isAmod = 1
+                            if isAmod == 1:
+                                phrase.append(depRes[idx2]["dependent"])
+                    phrase.append(depRes[idx]["dependent"])
+                # 动词补全
+                elif idx in indexs and types[idx] != 1:
+                    objs = types[idx] 
+                    lastVerb = idx
+                    for key,values in types.items():
+                        if values == objs and lastVerb < key:
+                            lastVerb = key
+                    phrase.append(depRes[idx]["dependent"])
+                    for idx2 in range(lastVerb + 1, objs + 1):
+                        phrase.append(depRes[idx2]["dependent"])
+                else:
+                    phrase.append(depRes[idx]["dependent"])
+
+        # for idx in range(start, end + 1):
+        #     if (depRes[idx]["pos"] == "," and depRes[idx]["dependent"] != "/") or depRes[idx]["dep"] == "cc":
+        #         phrase.append("@#$%^&")
+        #     else:
+        #         # 连词 分开
+        #         if depRes[idx]["dep"] == "conj":
+        #             # 找到第一个连词
+        #             conjs = depRes[idx]["govloc"]
+        #             # 补全： 本身是名词 补全两种：前面的compond（在一开始时完成） 前面的动词或者介词词组
+        #             # 连词后面补全暂时不考虑
+        #             if getPos(depRes[conjs]["pos"]) == wordnet.NOUN and getPos(depRes[idx]["pos"]) == wordnet.NOUN:
+        #                 # obj 为前面有动词的情况 或者 介词词组 nmod 的情况
+        #                 if (depRes[conjs]["dep"] == "obj" and getPos(depRes[depRes[conjs]["govloc"]]["pos"]) == wordnet.VERB) or depRes[conjs]["dep"] == "nmod": 
+        #                     for idx2 in range(depRes[conjs]["govloc"], conjs):
+        #                         # 排除：microphone permission : for recording …… 这种前面介词词组的误差  这里介词只允许是of
+        #                         if depRes[idx2]["pos"] == "IN" and depRes[idx2]["dependent"] != "of" or depRes[idx2]["dep"] == "punct":
+        #                             phrase = phrase[:(depRes[conjs]["govloc"] - idx2)]
+        #                             break
+        #                         else:
+        #                             phrase.append(depRes[idx2]["dependent"])
+        #                 else:
+        #                     # 还有一种情况是前面是动词 但是amod 格式 组合  有两种解决方案 一种和compound一样在前面合并 一种在这里找到
+        #                     isAmod = 0
+        #                     for idx2 in range(depRes[conjs]["govloc"], conjs):
+        #                         if depRes[idx2]["dep"] == "amod" and depRes[idx2]["govloc"] == conjs and conjs - idx2 <=2:
+        #                             isAmod = 1
+        #                         if isAmod == 1:
+        #                             phrase.append(depRes[idx2]["dependent"])
+                    # else:
+                    #     if getPos(depRes[conjs]["pos"]) == wordnet.VERB and getPos(depRes[idx]["pos"]) == wordnet.VERB:
+                    #         for dist in range(end + 1, len(depRes)):
+                    #             right = dist    
+                    #             if right < len(depRes):
+                    #                 govloc = depRes[right]["govloc"]
+                    #                 if govloc == conjs and not isInvalidPos(depRes[right]["pos"]):
+                    #                     finloc = right
+                    #                     conjEnd = finloc
+                    #                     for dist2 in range(finloc, finloc + 1):
+                    #                         for idx in range(dist2, len(depRes)):
+                    #                             govloc = depRes[idx]["govloc"]
+                    #                             dep = depRes[idx]["dep"]
+                    #                             if govloc == right and dep == "conj" and idx > conjEnd:
+                    #                                 conjEnd = idx
+                    #                     finloc = conjEnd
+                    #                     for idx2 in range(right, conjEnd):
+                    #                         phrase.append(depRes[idx2]["dependent"])
+                    #                     break
         
         return ' '.join(phrase)
 
@@ -456,7 +592,7 @@ class SentenceParser():
             deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
             phrase = self._getPhrase(deploc, finloc, depRes)
             phrases = phrase.split('@#$%^&')
-            phrases = [i.strip() for i in phrases if(len(str(i))!=0)]
+            phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
             res.append([depRes[keyloc]["dependent"], phrases, 
                         depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
                         "pattern_1", depRes[conjloc]["dependent"]])
@@ -508,19 +644,21 @@ class SentenceParser():
                     
                 for deploc in deplocs:
 
-                    if deploc in fvlocs or deploc in conjlocs:
+                    if deploc in fvlocs or deploc in conjlocs or depRes[deploc]["pos"] in FIFLTER_PATTERN:
                         continue
                     
                     dep = depRes[deploc]["dep"].split(':')[0]
                     if dep not in PATTERN_2_DEP_LIST:
                         continue
+                    # if dep == "nsubj" and depRes[deploc]["pos"] in FIFLTER_PATTERN:
+                    #     continue
 
                     finloc = self._findPhraseEnd(deploc, depRes)
                     deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
                     phrase = self._getPhrase(deploc, finloc, depRes)
                     # PI, scene, findep, finverb, patterns
                     phrases = phrase.split('@#$%^&')
-                    phrases = [i.strip() for i in phrases if(len(str(i))!=0)]
+                    phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
                     res.append([depRes[keyloc]["dependent"], phrases, 
                                     depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
                                     "pattern_2", depRes[conjloc]["dependent"]])
@@ -546,6 +684,8 @@ class SentenceParser():
                 continue
 
             for deploc in deplocs:
+                if depRes[deploc]["pos"] in FIFLTER_PATTERN:
+                    continue
 
                 dep = depRes[deploc]["dep"].split(':')[0]
                 if not dep in PATTERN_3_DEP_LIST:
@@ -562,13 +702,24 @@ class SentenceParser():
                 #             depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
                 #             "pattern_3", depRes[conjloc]["dependent"]])
                 phrases = phrase.split('@#$%^&')
-                phrases = [i.strip() for i in phrases if(len(str(i))!=0)]
+                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
                 
                 res.append([depRes[keyloc]["dependent"], phrases, 
                             depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
                             "pattern_3", depRes[conjloc]["dependent"]])
 
         return res
+
+    # 过滤  暂时过滤
+    def filter(self,tmpres):
+        finalpres = []
+        for phrases in tmpres:
+            if len(''.join(phrases[1])) > 100 or len(''.join(phrases[1])) < 3:
+                continue
+            # if phrases[2] == "nmod:poss":  本来基本上nmod:poss都是所有格your，但是发现了一个例外The Product's meeting functionality also enables you to be seen by other participants through your built-in device camera.
+            #     continue
+            finalpres.append(phrases)
+        return finalpres
 
     def parseDepRes(self, depRes):
         
@@ -585,13 +736,13 @@ class SentenceParser():
         for keyloc in keylocs:
             
             tmpres = self._pattern1(keyloc, depRes)
-            res.extend(tmpres)
+            res.extend(self.filter(tmpres))
 
             tmpres = self._pattern2(keyloc, depRes)
-            res.extend(tmpres)
+            res.extend(self.filter(tmpres))
 
             tmpres = self._pattern3(keyloc, depRes)
-            res.extend(tmpres)
+            res.extend(self.filter(tmpres))
 
         return res
 
@@ -622,7 +773,10 @@ if __name__ == "__main__":
     # ts =r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos."
     # ts =r"We access the microphone on your device (with your permission) to record audio messages and deliver sound during video calls."
     # ts = r"With your prior consent we will be allowed to use the microphone for songs immediate identification and lyrics synchronization."
-
+    # ts =r"TomTom navigation products and services need location data and other information to work correctly."
+    # ts = r"Some of our Apps offer you the option to talk to the virtual character of such Apps. All of our Apps that offer such feature will always ask you for your permission to access the microphone on your device in advance. If you decide to give us the permission, the virtual character will be able to repeat what you say to him. Please note that our Apps do not have a function to record audio, so what you say to the virtual character is not stored on our servers, it is only used by the App to repeat to you in real time. If you decide not to give us the permission to access the microphone on your device, the virtual character will not be able to repeat after you."
+    # ts = r"The Product's meeting functionality also enables you to be seen by other participants through your built-in device camera."
+    # ts = r"Cameras and photos: in order to be able to send and upload your photos from your camera, you must give us permission to access them."
 
     # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
     # ts = r"The app needs access to the camera to fulfill recording videos."
@@ -646,11 +800,9 @@ if __name__ == "__main__":
     # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
     # ts = r"Used to give sites ability to ask users to utilize microphone and used to provide voice search feature."
     # ts = r"Some features like searching a contact from the search bar require access to your Address book."
-    ts = r"Some features like searching a contact from the search bar require access to your Address book."
-    ts = r"Camera; for taking selfies and pictures using voice."
+    # ts = r"Camera; for taking selfies and pictures using voice."
 
     res = senParser.parseSentence(ts)  
-    res = senParser.parseSentence(ts)
     
     print(senParser.depParser.prettyRes(senParser.depRes))
     for e in res:
@@ -664,10 +816,10 @@ if __name__ == "__main__":
     # print(depParser.prettyRes(res))
 
     # with open(r"./sentences.json", 'r', encoding="utf-8") as f:
-    # with open(r"../test2.json", 'r', encoding="utf-8") as f:
+    # with open(r"../test.json", 'r', encoding="utf-8") as f:
     #     allSens = json.load(f)
 
-    # with open(r"./dep_sentence_test2_1.txt", 'w', encoding="utf-8") as f:
+    # with open(r"./dep_sentence_5.txt", 'w', encoding="utf-8") as f:
     #     index = 0
     #     resDict = []
     #     for item in allSens:
