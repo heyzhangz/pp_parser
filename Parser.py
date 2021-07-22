@@ -189,11 +189,11 @@ class SentenceParser():
         delta = 0
         for idx, gloc in enumerate(locMap):
             
+            locMap[idx] = delta
             if idx != gloc:
                 # 删除节点
                 del(depRes[idx - delta])
                 delta += 1    
-            locMap[idx] = delta
         
         for idx, item in enumerate(depRes):
             depRes[idx]["govloc"] -= locMap[depRes[idx]["govloc"]]
@@ -821,10 +821,15 @@ if __name__ == "__main__":
     # ts = r"Some features like searching a contact from the search bar require access to your Address book."
     # ts = r"Some features like searching a contact from the search bar require access to your Address book."
     # ts = r"Camera; for taking selfies and pictures using voice."
-    ts = r"For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings."
+    # ts = r"For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings."
+    # ts = "About Us Studios And Locations Educating Consumers Playtest"
+    ts = r"We display all the phone calls in the phone list in the form of lists"
 
-    # res = senParser.parseSentence(ts)  
-    res = senParser.parseSentence(ts)
+    # res = senParser.parseSentence(ts)
+    try:
+        res = senParser.parseSentence(ts)
+    except Exception as e:
+        print(e)
     
     print(senParser.depParser.prettyRes(senParser.depRes))
     for e in res:
