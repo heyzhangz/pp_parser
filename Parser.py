@@ -12,8 +12,6 @@ PERM_KEYWORD_LIST = ["contact", "address book",
 PATTERN_1_DEP_LIST = ["obl", "appos"]
 PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "obj", "nsubj", "conj"]
 PATTERN_3_DEP_LIST = ["nmod", "obl"]
-# TODO pattern_4
-PATTERN_4_DEP_LIST = ["ccomp"]
 
 FIFLTER_PATTERN = ["PRP","PRP$"]
 # FIFLTER_PRP_WORDS = ["we","you","he","she","they","it"]
@@ -95,6 +93,27 @@ class DepParser():
                       addSpaces("[%d](%s, %s)" % (governorloc, governor, governorpos), 28)))
 
         return resstr
+
+    def prettyResList(self, usrinput):
+
+        if type(usrinput) == str:
+            usrinput = self.parse(usrinput)
+    
+        resstrlist = []
+        for idx, item in enumerate(usrinput):
+            dependent = item["dependent"]
+            pos = item["pos"]
+            governorloc = item["govloc"]
+            dep = item["dep"]
+            governor = usrinput[governorloc]["dependent"]
+            governorpos = usrinput[governorloc]["pos"]
+
+            resstrlist.append("%d   %s%s%s" % (idx, 
+                     addSpaces("(%s, %s)" % (dependent, pos), 24),
+                    addSpaces(dep, 16),
+                    addSpaces("[%d](%s, %s)" % (governorloc, governor, governorpos), 28)))
+
+        return resstrlist
     pass
 
 def addSpaces(s, length):
@@ -128,6 +147,7 @@ def isInvalidPos(pos):
 def hashTuple(res):
     # 计算分析二元组的hash值
     text = res[0] + str(res[1]) + str(res[3])
+    # text = res[0] + str(res[1])
     return hash(text)
 
 class SentenceParser():
@@ -596,6 +616,12 @@ class SentenceParser():
                 continue
 
             deploc = depRes[conjloc]["govloc"]
+
+            # 判断场景目标词的词性
+            deppos = getPos(depRes[deploc]["pos"])
+            if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                continue
+
             finloc = self._findPhraseEnd(deploc, depRes)
             deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
             phrase = self._getPhrase(deploc, finloc, depRes)
@@ -658,18 +684,29 @@ class SentenceParser():
                     dep = depRes[deploc]["dep"].split(':')[0]
                     if dep not in PATTERN_2_DEP_LIST:
                         continue
+
+                    # 判断场景目标词的词性
+                    deppos = getPos(depRes[deploc]["pos"])
+                    if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                        continue
                     # if dep == "nsubj" and depRes[deploc]["pos"] in FIFLTER_PATTERN:
                     #     continue
 
-                    finloc = self._findPhraseEnd(deploc, depRes)
-                    deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-                    phrase = self._getPhrase(deploc, finloc, depRes)
+                    # finloc = self._findPhraseEnd(deploc, depRes)
+                    # deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                    # phrase = self._getPhrase(deploc, finloc, depRes)
+
+                    # deploc = fvloc # [test] 直接传动词
+                    finloc = self._findPhraseEnd(fvloc, depRes)
+                    tdeploc,finloc = self._getWholePhrase(fvloc,finloc,depRes)
+                    phrase = self._getPhrase(tdeploc, finloc, depRes)
                     # PI, scene, findep, finverb, patterns
                     phrases = phrase.split('@#$%^&')
                     phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
                     res.append([depRes[keyloc]["dependent"], phrases, 
                                     depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
                                     "pattern_2", depRes[conjloc]["dependent"]])
+                    break # TODO 这块逻辑有空再改, 写的啥玩意儿...
 
         return res
 
@@ -697,6 +734,11 @@ class SentenceParser():
 
                 dep = depRes[deploc]["dep"].split(':')[0]
                 if not dep in PATTERN_3_DEP_LIST:
+                    continue
+
+                # 判断场景目标词的词性
+                deppos = getPos(depRes[deploc]["pos"])
+                if deppos != wordnet.NOUN and deppos != wordnet.VERB:
                     continue
                 
                 #  为何提取要拆分成两部分
@@ -789,7 +831,7 @@ if __name__ == "__main__":
     # ts = r"We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates."
     # ts = r"We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: Microphone permissions: for video shooting and editing."
     # ts = r"Take pictures and videos absurd Labs need this permission to use your phone's camera to take pictures and videos."
-    ts = r"This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
+    # ts = r"This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
     # ts = r"The microphone also enables voice commands for control of the console, game, or app, or to enter search terms."
     # ts = r"Using your microphone for making note via voice."
     # ts =r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos."
@@ -826,15 +868,18 @@ if __name__ == "__main__":
     # ts = r"For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings."
     # ts = "About Us Studios And Locations Educating Consumers Playtest"
     # ts = r"We display all the phone calls in the phone list in the form of lists"
+    # ts = r"We use the categories of information for the business and commercial purposes outlined here we use information to protect our company and constituents.\u00c2 We use contact, demographic, and site usage information to protect our company and customers."
+    # ts = r"You have the option to request your friends to join the Services by providing their contact information."
+    ts = "We record calls for the purpose of monitoring our call handlers and providing appropriate training for them and to keep an accurate record of what was said during a telephone conversation in the event of further issues or complaint."
 
-    ts = ts.replace("/"," and ")
+    # ts = ts.replace("/"," and ")
     # for x in range(ts.find("/"), len(ts)):
     #     if ts[x] == "/":
     #         if x + 1 < len(ts):
     #             if  ts[x + 1].isdigit():
     #                 continue
     #             else:
-    ts = ' '.join(ts.split())
+    # ts = ' '.join(ts.split())
     # print(newts)
 
     # res = senParser.parseSentence(ts)
