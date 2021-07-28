@@ -9,7 +9,7 @@ PERM_KEYWORD_LIST = ["contact", "address book",
                      "location", "longitude", "latitude", "GPS",
                      "SMS", "phone"]
 
-PATTERN_1_DEP_LIST = ["obl", "appos"]
+PATTERN_1_DEP_LIST = ["obl"]
 PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "obj", "nsubj", "conj"]
 PATTERN_3_DEP_LIST = ["nmod", "obl"]
 
@@ -592,49 +592,6 @@ class SentenceParser():
                     #                     break
         
         return ' '.join(phrase)
-
-    def _pattern1(self, keyloc, depRes):
-        """
-            case(obl): Images recorded by cameras fitted to Sky's engineer vans.
-            4 (cameras, NNS) obl [2](recorded, VBN)
-
-            case(appos): Recording Call, Microphone
-            3 (microphone, NNP) appos [1](recording call, NNP) 
-
-            利用PI直接找到场景动词
-            
-            条件: PI的依赖关系为以上两种
-        """
-
-        res = []
-        conjlocs = self._findConjWord(keyloc, depRes)
-        conjlocs.append(keyloc)
-        
-        for conjloc in conjlocs:
-            dep = depRes[conjloc]["dep"].split(':')[0]
-            if dep not in PATTERN_1_DEP_LIST:
-                continue
-
-            deploc = depRes[conjloc]["govloc"]
-
-            # 判断场景目标词的词性
-            deppos = getPos(depRes[deploc]["pos"])
-            if deppos != wordnet.NOUN and deppos != wordnet.VERB:
-                continue
-
-            finloc = self._findPhraseEnd(deploc, depRes)
-            deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-            phrase = self._getPhrase(deploc, finloc, depRes)
-            phrases = phrase.split('@#$%^&')
-            phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
-            res.append([depRes[keyloc]["dependent"], phrases, 
-                        depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
-                        "pattern_1", depRes[conjloc]["dependent"]])
-            # res.append([depRes[keyloc]["dependent"], phrase, 
-            #             depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
-            #             "pattern_1", depRes[conjloc]["dependent"]])
-
-        return res
     
     def _pattern2(self, keyloc, depRes):
         """
@@ -692,14 +649,14 @@ class SentenceParser():
                     # if dep == "nsubj" and depRes[deploc]["pos"] in FIFLTER_PATTERN:
                     #     continue
 
-                    # finloc = self._findPhraseEnd(deploc, depRes)
-                    # deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-                    # phrase = self._getPhrase(deploc, finloc, depRes)
+                    finloc = self._findPhraseEnd(deploc, depRes)
+                    deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                    phrase = self._getPhrase(deploc, finloc, depRes)
 
                     # deploc = fvloc # [test] 直接传动词
-                    finloc = self._findPhraseEnd(fvloc, depRes)
-                    tdeploc,finloc = self._getWholePhrase(fvloc,finloc,depRes)
-                    phrase = self._getPhrase(tdeploc, finloc, depRes)
+                    # finloc = self._findPhraseEnd(fvloc, depRes)
+                    # tdeploc,finloc = self._getWholePhrase(fvloc,finloc,depRes)
+                    # phrase = self._getPhrase(tdeploc, finloc, depRes)
                     # PI, scene, findep, finverb, patterns
                     phrases = phrase.split('@#$%^&')
                     phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
@@ -757,6 +714,49 @@ class SentenceParser():
                 res.append([depRes[keyloc]["dependent"], phrases, 
                             depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
                             "pattern_3", depRes[conjloc]["dependent"]])
+
+        return res
+
+    def _pattern1(self, keyloc, depRes):
+        """
+            pattern: [SCENE\] <IN case> [PI]. [PI] {obl} [SCENE].
+            case: Image recorded by your camera.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+        
+        for conjloc in conjlocs:
+
+            dep = depRes[conjloc]["dep"].split(':')[0]
+            if dep not in PATTERN_1_DEP_LIST:
+                continue
+
+            deploc = depRes[conjloc]["govloc"]
+            # 判断 govloc 和 deploc 之间是否存在介词
+            hasPreposision = False
+            for loc in range(deploc + 1, conjloc):
+                if depRes[loc]["dep"] != "case" or depRes[loc]["pos"] != "IN":
+                    hasPreposision = True
+            if not hasPreposision:
+                continue
+
+            # 判断场景目标词的词性
+            deppos = getPos(depRes[deploc]["pos"])
+            if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                continue
+
+            finloc = self._findPhraseEnd(deploc, depRes)
+            deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+            phrase = self._getPhrase(deploc, finloc, depRes)
+            phrases = phrase.split('@#$%^&')
+            phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+            res.append([depRes[keyloc]["dependent"], phrases, 
+                        depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
+                        "pattern_1", depRes[conjloc]["dependent"]])
+            # res.append([depRes[keyloc]["dependent"], phrase, 
+            #             depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
+            #             "pattern_1", depRes[conjloc]["dependent"]])
 
         return res
 
@@ -870,7 +870,8 @@ if __name__ == "__main__":
     # ts = r"We display all the phone calls in the phone list in the form of lists"
     # ts = r"We use the categories of information for the business and commercial purposes outlined here we use information to protect our company and constituents.\u00c2 We use contact, demographic, and site usage information to protect our company and customers."
     # ts = r"You have the option to request your friends to join the Services by providing their contact information."
-    ts = "We record calls for the purpose of monitoring our call handlers and providing appropriate training for them and to keep an accurate record of what was said during a telephone conversation in the event of further issues or complaint."
+    # ts = "We record calls for the purpose of monitoring our call handlers and providing appropriate training for them and to keep an accurate record of what was said during a telephone conversation in the event of further issues or complaint."
+    ts = "Image recorded by your camera."
 
     # ts = ts.replace("/"," and ")
     # for x in range(ts.find("/"), len(ts)):
@@ -882,11 +883,11 @@ if __name__ == "__main__":
     # ts = ' '.join(ts.split())
     # print(newts)
 
-    # res = senParser.parseSentence(ts)
-    try:
-        res = senParser.parseSentence(ts)
-    except Exception as e:
-        print(e)
+    res = senParser.parseSentence(ts)
+    # try:
+    #     res = senParser.parseSentence(ts)
+    # except Exception as e:
+    #     print(e)
     
     print(senParser.depParser.prettyRes(senParser.depRes))
     for e in res:
