@@ -133,3 +133,10 @@ sentences.json
 *.txt
 test.json
 *.xml
+depresult_split_0723
+main*.py
+all*.json
+*.swp
+*.swo
+filter.py
+removeDupSen.py

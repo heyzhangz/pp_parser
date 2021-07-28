@@ -209,8 +209,11 @@ class SentenceParser():
 
         for idx, item in enumerate(depRes):
             word = item["dependent"]
+            pos = getPos(item["pos"])
             # TODO 后面可以换相似度之类的方法, 现在就只是匹配一哈
             for key in keywords:
+                if pos != wordnet.NOUN:
+                    continue
                 if key in word:
                     res.append(idx)
                     break
@@ -785,8 +788,6 @@ if __name__ == "__main__":
     # ts = r"We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: Microphone permissions: for video shooting and editing."
     # ts = r"Take pictures and videos absurd Labs need this permission to use your phone's camera to take pictures and videos."
     # ts = r"This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
-
-
     # ts = r"The microphone also enables voice commands for control of the console, game, or app, or to enter search terms."
     # ts = r"Using your microphone for making note via voice."
     # ts =r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos."
@@ -796,7 +797,6 @@ if __name__ == "__main__":
     # ts = r"Some of our Apps offer you the option to talk to the virtual character of such Apps. All of our Apps that offer such feature will always ask you for your permission to access the microphone on your device in advance. If you decide to give us the permission, the virtual character will be able to repeat what you say to him. Please note that our Apps do not have a function to record audio, so what you say to the virtual character is not stored on our servers, it is only used by the App to repeat to you in real time. If you decide not to give us the permission to access the microphone on your device, the virtual character will not be able to repeat after you."
     # ts = r"The Product's meeting functionality also enables you to be seen by other participants through your built-in device camera."
     # ts = r"Cameras and photos: in order to be able to send and upload your photos from your camera, you must give us permission to access them."
-
     # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
     # ts = r"The app needs access to the camera to fulfill recording videos."
     # ts = r"If granted permission by a user, we use access to a phone's microphone to facilitate voice enabled search queries. All interaction and access to the microphone is user initiated and voice queries are not shared with third party apps or providers."
@@ -823,7 +823,9 @@ if __name__ == "__main__":
     # ts = r"Camera; for taking selfies and pictures using voice."
     # ts = r"For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings."
     # ts = "About Us Studios And Locations Educating Consumers Playtest"
-    ts = r"We display all the phone calls in the phone list in the form of lists"
+    # ts = r"We display all the phone calls in the phone list in the form of lists"
+    # ts = r"We ask your permission before syncing your contacts."
+    ts = r"This permission allows Starplaycreations to identify and display your location on map or apps installed by anonymous surrounding users and to recommend popular apps based on users' location."
 
     # res = senParser.parseSentence(ts)
     try:
