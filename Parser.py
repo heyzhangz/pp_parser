@@ -1,12 +1,8 @@
-from json import decoder
 import nltk
-import json
 from nltk.corpus.reader.wordnet import VERB
-from nltk.tokenize import WordPunctTokenizer
 from nltk.parse import corenlp
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
-from requests.models import parse_header_links
 
 PERM_KEYWORD_LIST = ["contact", "address book",
                      "camera", "microphone", "record_audio",
@@ -382,6 +378,10 @@ class SentenceParser():
                     distEnd = dist
             if distEnd == len(depRes) - 1:
                 break
+
+        if getPos(depRes[finloc]["pos"]) == wordnet.VERB and depRes[finloc]['dep'] == "amod" and  getPos(depRes[depRes[finloc]["govloc"]]["pos"]) == wordnet.NOUN and depRes[finloc]["govloc"] > finloc:
+            finloc = depRes[finloc]["govloc"]
+     
         
         # if getPos(depRes[finloc]["pos"]) == wordnet.VERB and getPos(depRes[depRes[finloc]["govloc"]]["pos"]) == wordnet.VERB and depRes[finloc]["dep"] == "conj":
         #     conjsgovloc = depRes[finloc]["govloc"]
@@ -776,6 +776,8 @@ class SentenceParser():
 
     pass
 
+# find_all = lambda c, s: [x for x in range(c.find(s), len(c)) if c[x] == s]
+
 if __name__ == "__main__":
 
     senParser = SentenceParser()    
@@ -787,7 +789,7 @@ if __name__ == "__main__":
     # ts = r"We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates."
     # ts = r"We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: Microphone permissions: for video shooting and editing."
     # ts = r"Take pictures and videos absurd Labs need this permission to use your phone's camera to take pictures and videos."
-    # ts = r"This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
+    ts = r"This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
     # ts = r"The microphone also enables voice commands for control of the console, game, or app, or to enter search terms."
     # ts = r"Using your microphone for making note via voice."
     # ts =r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos."
@@ -824,8 +826,16 @@ if __name__ == "__main__":
     # ts = r"For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings."
     # ts = "About Us Studios And Locations Educating Consumers Playtest"
     # ts = r"We display all the phone calls in the phone list in the form of lists"
-    # ts = r"We ask your permission before syncing your contacts."
-    ts = r"This permission allows Starplaycreations to identify and display your location on map or apps installed by anonymous surrounding users and to recommend popular apps based on users' location."
+
+    ts = ts.replace("/"," and ")
+    # for x in range(ts.find("/"), len(ts)):
+    #     if ts[x] == "/":
+    #         if x + 1 < len(ts):
+    #             if  ts[x + 1].isdigit():
+    #                 continue
+    #             else:
+    ts = ' '.join(ts.split())
+    # print(newts)
 
     # res = senParser.parseSentence(ts)
     try:
