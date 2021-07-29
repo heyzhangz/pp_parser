@@ -14,7 +14,7 @@ PATTERN_1V_DEP_LIST = ["obl", "nmod", "dep"]
 # PATTERN_1_IN_BLACK_LIST = ["in", "on", "from", "with"]
 PATTERN_1_IN_BLACK_LIST = []
 
-PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "obj", "nsubj", "conj"]
+PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass"]
 
 FIFLTER_PATTERN = ["PRP","PRP$"]
 # FIFLTER_PRP_WORDS = ["we","you","he","she","they","it"]
@@ -320,7 +320,7 @@ class SentenceParser():
         # 如果存在动宾词组, 补充动词, *动词在名词前面*
         govloc = depRes[wloc]["govloc"]
         # access 有时会被当成名词, 
-        if govloc < wloc and (getPos(depRes[govloc]["pos"]) == wordnet.VERB or depRes[govloc]["dependent"] == "access"):
+        if getPos(depRes[govloc]["pos"]) == wordnet.VERB or depRes[govloc]["dependent"] == "access":
             return govloc
 
         return None
@@ -621,77 +621,74 @@ class SentenceParser():
         
         return ' '.join(phrase)
     
+    def _findClosedVerb(self, wloc, depRes, limitDeps):
+        # 找到与wloc最近的动词
+        
+        while wloc != 0:
+            dep = depRes[wloc]["dep"]
+            govloc = depRes[wloc]["govloc"]
+
+            if getPos(depRes[govloc]["pos"]) != wordnet.VERB:
+                wloc = govloc
+            else:
+                if dep in limitDeps:
+                    return govloc
+                break
+
+        return None
+
     def _pattern2(self, keyloc, depRes):
         """
-            case(advcl): Permission to access contact information is used when you search contacts in JVSTUDIOS search bar.
-            4  (contact, NN) compound [5](information, NN)
-            10 (search, VBP) advcl    [7](used, VBN)
+           句式: verb + PI to {do SCENE}
 
-            case(xcomp): The app needs access to the camera to fulfill recording videos.
-            7 (camera, NN)   nmod  [4](access, NN)
-            9 (fulfill, VB)  xcomp [3](needs, VBZ)
+           pattern: verb {obj} PI to SCENE; verb {xcomp} SCENE
+           case: Use your camera to take photos, no data is collected.
 
-            case(obl): The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms.
-            4 (microphone, NNS) nsubj [5](enable, VBP)
-            8 (navigation, NN)  obl [5](enable, VBP)
-
-            case(obj): Microphone, To enable voice command related actions.
-            1 (microphone, NN)                   nsubj  [4](enable, VB)
-            5 (voice command relate action, NNS) obj    [4](enable, VB)
-
-            case(nsubj:pass): Voice control features will only be enabled if you affirmatively activate voice controls by giving us access to the microphone on your device.
-            1  (voice control feature, NNS) nsubj:pass  [5](enable, VBN)
-            17 (microphone, NN)             nmod        [14](access, NN)
-
-            利用PI找到依赖动词, 利用依赖动词找到场景动词
-
-            条件: 暂时通用, 目前发现的PI关系为以上6种
+           pattern PI {nsubj:pass} verb to SCENE; verb {xcomp} SCENE
+           case: CAMERA is required to let the app take pictures.
         """
+
         res = []
-        # conjlocs = self._findConjWord(keyloc, depRes)
-        # conjlocs.append(keyloc)
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
 
-        # for conjloc in conjlocs:
-        #     fvlocs = self._parseGovFinVerb(conjloc, depRes)
-        #     if len(fvlocs) == 0:
-        #         continue
+        for conjloc in conjlocs:
+            fvloc = self._findClosedVerb(conjloc, depRes, ["obj", "nsubj:pass"])
+            if not fvloc:
+                continue
 
-        #     for fvloc in fvlocs:
-        #         deplocs = self._parseDepWord(fvloc, depRes)
-        #         if len(deplocs) == 0:
-        #             continue
+            fvlocs = self._findConjWord(fvloc, depRes)
+            fvlocs.append(fvloc)
+
+            for fvloc in fvlocs:
+                deplocs = self._parseDepWord(fvloc, depRes)
+                if len(deplocs) == 0:
+                    continue
+                        
+                for deploc in deplocs:
                     
-        #         for deploc in deplocs:
+                    if deploc == keyloc:
+                        continue
 
-        #             if deploc in fvlocs or deploc in conjlocs or depRes[deploc]["pos"] in FIFLTER_PATTERN:
-        #                 continue
-                    
-        #             dep = depRes[deploc]["dep"].split(':')[0]
-        #             if dep not in PATTERN_2_DEP_LIST:
-        #                 continue
+                    dep = depRes[deploc]["dep"]
+                    if dep not in PATTERN_2_DEP_LIST:
+                        continue
 
-        #             # 判断场景目标词的词性
-        #             deppos = getPos(depRes[deploc]["pos"])
-        #             if deppos != wordnet.NOUN and deppos != wordnet.VERB:
-        #                 continue
-        #             # if dep == "nsubj" and depRes[deploc]["pos"] in FIFLTER_PATTERN:
-        #             #     continue
+                    # 判断场景目标词的词性
+                    deppos = getPos(depRes[deploc]["pos"])
+                    if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                        continue
 
-        #             finloc = self._findPhraseEnd(deploc, depRes)
-        #             deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-        #             phrase = self._getPhrase(deploc, finloc, depRes)
+                    finloc = self._findPhraseEnd(deploc, depRes)
+                    deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                    phrase = self._getPhrase(deploc, finloc, depRes)
 
-        #             # deploc = fvloc # [test] 直接传动词
-        #             # finloc = self._findPhraseEnd(fvloc, depRes)
-        #             # tdeploc,finloc = self._getWholePhrase(fvloc,finloc,depRes)
-        #             # phrase = self._getPhrase(tdeploc, finloc, depRes)
-        #             # PI, scene, findep, finverb, patterns
-        #             phrases = phrase.split('@#$%^&')
-        #             phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
-        #             res.append([depRes[keyloc]["dependent"], phrases, 
-        #                             depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
-        #                             "pattern_2", depRes[conjloc]["dependent"]])
-        #             break # TODO 这块逻辑有空再改, 写的啥玩意儿...
+                    phrases = phrase.split('@#$%^&')
+                    phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                    res.append([depRes[keyloc]["dependent"], phrases, 
+                                depRes[deploc]["dep"],"%s[%d]" % (depRes[fvloc]["dependent"], fvloc), 
+                                "pattern_2(%s)" % depRes[deploc]["dep"], 
+                                "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
 
         return res
 
@@ -791,11 +788,13 @@ class SentenceParser():
         return res
 
     # 过滤  暂时过滤
-    def filter(self,tmpres):
+    def filter(self, tmpres):
         finalpres = []
         for phrases in tmpres:
-            if len(''.join(phrases[1])) > 100 or len(''.join(phrases[1])) < 3:
+            tphrases = [ph for ph in phrases[1] if 100 > len(ph) > 3]
+            if len(tphrases) <= 0:
                 continue
+            phrases[1] = tphrases
             # if phrases[2] == "nmod:poss":  本来基本上nmod:poss都是所有格your，但是发现了一个例外The Product's meeting functionality also enables you to be seen by other participants through your built-in device camera.
             #     continue
             finalpres.append(phrases)
@@ -837,13 +836,6 @@ class SentenceParser():
                     res.append(e)
                     readyRes.add(hashe)
 
-            # tmpres = self.filter(self._pattern3(keyloc, depRes))
-            # for e in tmpres:
-            #     hashe = hashTuple(e)
-            #     if hashe not in readyRes:
-            #         res.append(e)
-            #         readyRes.add(hashe)
-
         return res
 
     def parseSentence(self, sentence):
@@ -867,11 +859,36 @@ if __name__ == "__main__":
         "Microphone, for recording voices in the videos.",
         "Microphone: for recording voices in the videos.",
         "Microphone; for recording voices in the videos.",
+        "Microphone; for detecting your voice and command,",
         "Microphone; for detecting your voice and command",
         "Images recorded by cameras fitted to Sky's engineer vans.",
         "Microphone; for detecting your voice and command.",
         "Using microphone permissions for video shooting and editing",
-        "The app needs access to the camera for recording videos."
+        "The app needs access to the camera for recording videos.",
+        "CAMERA permission so you can take photo from your phone's camera.",
+        "With your prior consent we will be allowed to use the microphone for songs immediate identification and lyrics synchronization.",
+        "for example, where your camera is enabled in videoconference sessions that are recorded for later viewing.",
+        "The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms.",
+        "Cameras and photos: in order to be able to send and upload your photos from your camera, you must give us permission to access them.",
+        "we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices.",
+        "The Kinect microphone can enable voice chat between players during play.", # err
+    ]
+
+    p2s = [
+        "If granted permission by a user, My Home Screen Apps uses access to a device's microphone to facilitate voice-enabled search queries and may access your devices camera, photos, media, and other files.",
+        # v + PI to do <use> -> obj 
+        "For example: we or a third party may use your location information to provide you with weather forecast push, geographic location navigation and other related information services;",
+        "This permission allows APPSTARSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash.",
+        "This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash. We do not save or upload your photos/videos.",
+        "Call recorder uses your phone's microphone and call audio source to record calls. It does not transfer any audio or voice data to us or to any third party. It can upload recording files to your account in cloud services if you use any in Premium version.",
+        "android.permission. RECORD_AUDIO use camera phone to take short video support feature edit and make video",
+        "For example, a photo editing app might access your device's camera to let you take a new photo or access photos or videos stored on your device for editing.",
+        "CAMERA -- Use your camera to take photos, no data is collected.",
+        "Coinoscope mobile application uses a phone camera to capture images of coins.",
+        "Camera for Android asks for CAMERA permissions is for using the camera to take photoes and record videos.",
+        # PI + v[pass] to do <nsubj:pass>
+        "The microphone access is required to record voice during the composing process under the following conditions: \"MIC\" button has been tapped on.",
+        "CAMERA is required to let the app take pictures",
     ]
 
     pts = [
@@ -923,7 +940,7 @@ if __name__ == "__main__":
         "The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms."
     ]
 
-    for ts in p1s:
+    for ts in p2s:
     # for ts in pts:
         res = senParser.parseSentence(ts)
         print(ts)
@@ -932,3 +949,25 @@ if __name__ == "__main__":
             print(e)
         print('\n')
 
+    # use access[NN] + PI to do 
+    # ts = "If granted permission by a user, My Home Screen Apps uses access to a device's microphone to facilitate voice-enabled search queries and may access your devices camera, photos, media, and other files."
+    # v + PI to do <use> -> obj 
+    ts = "For example: we or a third party may use your location information to provide you with weather forecast push, geographic location navigation and other related information services;"
+    ts = "This permission allows APPSTARSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
+    ts = "This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash. We do not save or upload your photos/videos."
+    ts = "RECORD_AUDIO use camera phone to take short video support feature edit and make video"
+    ts = "For example, a photo editing app might access your device's camera to let you take a new photo or access photos or videos stored on your device for editing."
+    ts = "CAMERA -- Use your camera to take photos, no data is collected."
+    ts = "Coinoscope mobile application uses a phone camera to capture images of coins."
+    ts = "Camera for Android asks for CAMERA permissions is for using the camera to take photoes and record videos."
+    # PI + v[pass] to do <nsubj:pass>
+    ts = "The microphone access is required to record voice during the composing process under the following conditions: \"MIC\" button has been tapped on."
+    ts = "CAMERA is required to let the app take pictures"
+
+
+    # ts = "Our search function supports searching contacts in the address book to help you quickly find the phone number of your family member or friends. Once found, you can call directly."
+    # print(ts + '\n')
+    # res = senParser.parseSentence(ts)
+    # print(senParser.depParser.prettyRes(senParser.depRes))
+    # for e in res:
+    #     print(e)
