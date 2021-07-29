@@ -10,8 +10,11 @@ PERM_KEYWORD_LIST = ["contact", "address book",
                      "SMS", "phone"]
 
 PATTERN_1_DEP_LIST = ["obl"]
+PATTERN_1V_DEP_LIST = ["obl", "nmod", "dep"]
+# PATTERN_1_IN_BLACK_LIST = ["in", "on", "from", "with"]
+PATTERN_1_IN_BLACK_LIST = []
+
 PATTERN_2_DEP_LIST = ["advcl", "xcomp", "obl", "obj", "nsubj", "conj"]
-PATTERN_3_DEP_LIST = ["nmod", "obl"]
 
 FIFLTER_PATTERN = ["PRP","PRP$"]
 # FIFLTER_PRP_WORDS = ["we","you","he","she","they","it"]
@@ -268,6 +271,18 @@ class SentenceParser():
 
         return dlocs
 
+    def _findTargetDepWord(self, wloc, depRes, tardeps):
+
+        dlocs = []
+
+        for idx, item in enumerate(depRes):
+            govloc = item["govloc"]
+            dep = item["dep"].split(':')[0]            
+            if govloc == wloc and dep in tardeps:
+                dlocs.append(idx)
+
+        return dlocs        
+
     def _findConjWord(self, wloc, depRes):
         """
             找全部conj关系的并列词, 包含两种情况:
@@ -296,6 +311,19 @@ class SentenceParser():
             conjlocs.append(idx)
 
         return conjlocs
+
+    def _findDirectVerb(self, wloc, depRes):
+        """
+            匹配PI的直接依赖动词, 比如use camera
+        """
+
+        # 如果存在动宾词组, 补充动词, *动词在名词前面*
+        govloc = depRes[wloc]["govloc"]
+        # access 有时会被当成名词, 
+        if govloc < wloc and (getPos(depRes[govloc]["pos"]) == wordnet.VERB or depRes[govloc]["dependent"] == "access"):
+            return govloc
+
+        return None
 
     def _findPhraseEnd(self, loc, depRes):
         """
@@ -620,100 +648,50 @@ class SentenceParser():
             条件: 暂时通用, 目前发现的PI关系为以上6种
         """
         res = []
-        conjlocs = self._findConjWord(keyloc, depRes)
-        conjlocs.append(keyloc)
+        # conjlocs = self._findConjWord(keyloc, depRes)
+        # conjlocs.append(keyloc)
 
-        for conjloc in conjlocs:
-            fvlocs = self._parseGovFinVerb(conjloc, depRes)
-            if len(fvlocs) == 0:
-                continue
+        # for conjloc in conjlocs:
+        #     fvlocs = self._parseGovFinVerb(conjloc, depRes)
+        #     if len(fvlocs) == 0:
+        #         continue
 
-            for fvloc in fvlocs:
-                deplocs = self._parseDepWord(fvloc, depRes)
-                if len(deplocs) == 0:
-                    continue
+        #     for fvloc in fvlocs:
+        #         deplocs = self._parseDepWord(fvloc, depRes)
+        #         if len(deplocs) == 0:
+        #             continue
                     
-                for deploc in deplocs:
+        #         for deploc in deplocs:
 
-                    if deploc in fvlocs or deploc in conjlocs or depRes[deploc]["pos"] in FIFLTER_PATTERN:
-                        continue
+        #             if deploc in fvlocs or deploc in conjlocs or depRes[deploc]["pos"] in FIFLTER_PATTERN:
+        #                 continue
                     
-                    dep = depRes[deploc]["dep"].split(':')[0]
-                    if dep not in PATTERN_2_DEP_LIST:
-                        continue
+        #             dep = depRes[deploc]["dep"].split(':')[0]
+        #             if dep not in PATTERN_2_DEP_LIST:
+        #                 continue
 
-                    # 判断场景目标词的词性
-                    deppos = getPos(depRes[deploc]["pos"])
-                    if deppos != wordnet.NOUN and deppos != wordnet.VERB:
-                        continue
-                    # if dep == "nsubj" and depRes[deploc]["pos"] in FIFLTER_PATTERN:
-                    #     continue
+        #             # 判断场景目标词的词性
+        #             deppos = getPos(depRes[deploc]["pos"])
+        #             if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+        #                 continue
+        #             # if dep == "nsubj" and depRes[deploc]["pos"] in FIFLTER_PATTERN:
+        #             #     continue
 
-                    finloc = self._findPhraseEnd(deploc, depRes)
-                    deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-                    phrase = self._getPhrase(deploc, finloc, depRes)
+        #             finloc = self._findPhraseEnd(deploc, depRes)
+        #             deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+        #             phrase = self._getPhrase(deploc, finloc, depRes)
 
-                    # deploc = fvloc # [test] 直接传动词
-                    # finloc = self._findPhraseEnd(fvloc, depRes)
-                    # tdeploc,finloc = self._getWholePhrase(fvloc,finloc,depRes)
-                    # phrase = self._getPhrase(tdeploc, finloc, depRes)
-                    # PI, scene, findep, finverb, patterns
-                    phrases = phrase.split('@#$%^&')
-                    phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
-                    res.append([depRes[keyloc]["dependent"], phrases, 
-                                    depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
-                                    "pattern_2", depRes[conjloc]["dependent"]])
-                    break # TODO 这块逻辑有空再改, 写的啥玩意儿...
-
-        return res
-
-    def _pattern3(self, keyloc, depRes):
-        """
-            case(nmod): When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Microphone, for recording voices in the videos.
-            32 (record voice, NNS) nmod [29](microphone, NNP)
-
-            利用PI做governor来直接找到对应的场景
-
-            条件: nmod关系
-        """
-        res = []
-        conjlocs = self._findConjWord(keyloc, depRes)
-        conjlocs.append(keyloc)
-
-        for conjloc in conjlocs:        
-            deplocs = self._parseDepWord(conjloc, depRes)
-            if len(deplocs) == 0:
-                continue
-
-            for deploc in deplocs:
-                if depRes[deploc]["pos"] in FIFLTER_PATTERN:
-                    continue
-
-                dep = depRes[deploc]["dep"].split(':')[0]
-                if not dep in PATTERN_3_DEP_LIST:
-                    continue
-
-                # 判断场景目标词的词性
-                deppos = getPos(depRes[deploc]["pos"])
-                if deppos != wordnet.NOUN and deppos != wordnet.VERB:
-                    continue
-                
-                #  为何提取要拆分成两部分
-                #  When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos.
-                #  camera 定位到photo 则 要从shoot到videos 需要两边都修改，所以要能返回两个值
-                finloc = self._findPhraseEnd(deploc, depRes)
-                deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-                phrase = self._getPhrase(deploc, finloc, depRes)
-
-                # res.append([depRes[keyloc]["dependent"], phrase, 
-                #             depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
-                #             "pattern_3", depRes[conjloc]["dependent"]])
-                phrases = phrase.split('@#$%^&')
-                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
-                
-                res.append([depRes[keyloc]["dependent"], phrases, 
-                            depRes[deploc]["dep"], depRes[conjloc]["dependent"], 
-                            "pattern_3", depRes[conjloc]["dependent"]])
+        #             # deploc = fvloc # [test] 直接传动词
+        #             # finloc = self._findPhraseEnd(fvloc, depRes)
+        #             # tdeploc,finloc = self._getWholePhrase(fvloc,finloc,depRes)
+        #             # phrase = self._getPhrase(tdeploc, finloc, depRes)
+        #             # PI, scene, findep, finverb, patterns
+        #             phrases = phrase.split('@#$%^&')
+        #             phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+        #             res.append([depRes[keyloc]["dependent"], phrases, 
+        #                             depRes[deploc]["dep"], depRes[fvloc]["dependent"], 
+        #                             "pattern_2", depRes[conjloc]["dependent"]])
+        #             break # TODO 这块逻辑有空再改, 写的啥玩意儿...
 
         return res
 
@@ -736,8 +714,10 @@ class SentenceParser():
             # 判断 govloc 和 deploc 之间是否存在介词
             hasPreposision = False
             for loc in range(deploc + 1, conjloc):
-                if depRes[loc]["dep"] != "case" or depRes[loc]["pos"] != "IN":
+                if depRes[loc]["dep"] == "case" and depRes[loc]["pos"] == "IN" and \
+                   depRes[loc]["dependent"] not in PATTERN_1_IN_BLACK_LIST:
                     hasPreposision = True
+                    break
             if not hasPreposision:
                 continue
 
@@ -752,11 +732,61 @@ class SentenceParser():
             phrases = phrase.split('@#$%^&')
             phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
             res.append([depRes[keyloc]["dependent"], phrases, 
-                        depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
-                        "pattern_1", depRes[conjloc]["dependent"]])
-            # res.append([depRes[keyloc]["dependent"], phrase, 
-            #             depRes[conjloc]["dep"], depRes[conjloc]["dependent"], 
-            #             "pattern_1", depRes[conjloc]["dependent"]])
+                        depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc),
+                        "pattern_1(%s)" % depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+
+        return res
+
+    def _pattern1V(self, keyloc, depRes):
+        """
+            pattern: [SCENE] <IN case> [use PI]. [SCENE] {obl} [use].
+            case: Using your microphone for making note via voice.
+
+            pattern: [PI] <IN case> [SCENE]. [SCENE] {nmod\dep} [PI].
+            case: Using your microphone for making note via voice.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+        
+        for conjloc in conjlocs:
+            vloc = self._findDirectVerb(conjloc, depRes)
+            if vloc:
+                conjlocs.append(vloc)
+
+        for conjloc in conjlocs:
+            
+            deplocs = []
+            deplocs.extend(self._findTargetDepWord(conjloc, depRes, PATTERN_1V_DEP_LIST))
+
+            for deploc in deplocs:
+
+                if deploc in conjlocs:
+                    continue
+
+                # 判断 govloc 和 deploc 之间是否存在介词
+                hasPreposision = False
+                for loc in range(conjloc + 1, deploc):
+                    if depRes[loc]["dep"] == "case" and depRes[loc]["pos"] == "IN" and \
+                       depRes[loc]["dependent"] not in PATTERN_1_IN_BLACK_LIST:
+                        hasPreposision = True
+                        break
+                if not hasPreposision:
+                    continue
+
+                # 判断场景目标词的词性
+                deppos = getPos(depRes[deploc]["pos"])
+                if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                    continue
+
+                finloc = self._findPhraseEnd(deploc, depRes)
+                tdeploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                phrase = self._getPhrase(tdeploc, finloc, depRes)
+                phrases = phrase.split('@#$%^&')
+                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                res.append([depRes[keyloc]["dependent"], phrases, 
+                            depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc), 
+                            "pattern_1v(%s)" % depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
 
         return res
 
@@ -787,7 +817,13 @@ class SentenceParser():
         for keyloc in keylocs:
             
             tmpres = self.filter(self._pattern1(keyloc, depRes))
-
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
+            
+            tmpres = self.filter(self._pattern1V(keyloc, depRes))
             for e in tmpres:
                 hashe = hashTuple(e)
                 if hashe not in readyRes:
@@ -801,12 +837,12 @@ class SentenceParser():
                     res.append(e)
                     readyRes.add(hashe)
 
-            tmpres = self.filter(self._pattern3(keyloc, depRes))
-            for e in tmpres:
-                hashe = hashTuple(e)
-                if hashe not in readyRes:
-                    res.append(e)
-                    readyRes.add(hashe)
+            # tmpres = self.filter(self._pattern3(keyloc, depRes))
+            # for e in tmpres:
+            #     hashe = hashTuple(e)
+            #     if hashe not in readyRes:
+            #         res.append(e)
+            #         readyRes.add(hashe)
 
         return res
 
@@ -822,123 +858,77 @@ class SentenceParser():
 
 if __name__ == "__main__":
 
-    senParser = SentenceParser()    
-    # ts = r"If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually."
-    # ts = r"The app accesses the contacts on the phone in order to display the contacts and so the app can record or ignore calls from specific contacts."
-    # ts = r"We display all the phone calls in the phone list in the form of lists, and you can dial the phone directly in the message center. In order to make you use this function normally, we need to get call record information to implement the display and edit management of the call record list, including the telephone number, the way to call (the incoming calls, the unanswered calls, the dialed and rejected calls), and the time of the call. Meanwhile, in order to help you quickly select contacts in dialing, we need to read your address book contact information."
-    # ts = r"The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms. Learn more about voice data collection."
-    # ts = r"If granted permission by a user, My Home Screen Apps uses access to a device's microphone to facilitate voice-enabled search queries and may access your deviceâs camera, photos, media, and other files."
-    # ts = r"We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates."
-    # ts = r"We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: Microphone permissions: for video shooting and editing."
-    # ts = r"Take pictures and videos absurd Labs need this permission to use your phone's camera to take pictures and videos."
-    # ts = r"This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash."
-    # ts = r"The microphone also enables voice commands for control of the console, game, or app, or to enter search terms."
-    # ts = r"Using your microphone for making note via voice."
-    # ts =r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos."
-    # ts =r"We access the microphone on your device (with your permission) to record audio messages and deliver sound during video calls."
-    # ts = r"With your prior consent we will be allowed to use the microphone for songs immediate identification and lyrics synchronization."
-    # ts =r"TomTom navigation products and services need location data and other information to work correctly."
-    # ts = r"Some of our Apps offer you the option to talk to the virtual character of such Apps. All of our Apps that offer such feature will always ask you for your permission to access the microphone on your device in advance. If you decide to give us the permission, the virtual character will be able to repeat what you say to him. Please note that our Apps do not have a function to record audio, so what you say to the virtual character is not stored on our servers, it is only used by the App to repeat to you in real time. If you decide not to give us the permission to access the microphone on your device, the virtual character will not be able to repeat after you."
-    # ts = r"The Product's meeting functionality also enables you to be seen by other participants through your built-in device camera."
-    # ts = r"Cameras and photos: in order to be able to send and upload your photos from your camera, you must give us permission to access them."
-    # ts = r"Images recorded by cameras fitted to Sky's engineer vans."
-    # ts = r"The app needs access to the camera to fulfill recording videos."
-    # ts = r"If granted permission by a user, we use access to a phone's microphone to facilitate voice enabled search queries. All interaction and access to the microphone is user initiated and voice queries are not shared with third party apps or providers."
-    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
-    # ts = r"including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor."
-    # ts = r"Voice control features will only be enabled if you affirmatively activate voice controls by giving us access to the microphone on your device."
-    # ts = r"The app needs access to the camera to fulfill recording videos."
-    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
-    # ts = r"When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Microphone, for recording voices in the videos."
-    # ts = r"We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: â· Microphone permissions: for video shooting and editingï¼"
-    # ts = r"Microphone, for recording voices in the videos."
-    # ts = r"Recording Call, Microphone"
-    # ts = r"Microphone; for detecting your voice and command,"
-    # ts = r"Used for accessing the camera or capturing images and video from the device."
-    # ts = r"The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms."
-    # ts = r"HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate."
-    # ts = r"If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually."
-    # ts = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
-    # ts = r"including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor"
-    # ts = r"Permission to access contact information is used when you search contacts in JVSTUDIOS search bar."
-    # ts = r"Used to give sites ability to ask users to utilize microphone and used to provide voice search feature."
-    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
-    # ts = r"Some features like searching a contact from the search bar require access to your Address book."
-    # ts = r"Camera; for taking selfies and pictures using voice."
-    # ts = r"For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings."
-    # ts = "About Us Studios And Locations Educating Consumers Playtest"
-    # ts = r"We display all the phone calls in the phone list in the form of lists"
-    # ts = r"We use the categories of information for the business and commercial purposes outlined here we use information to protect our company and constituents.\u00c2 We use contact, demographic, and site usage information to protect our company and customers."
-    # ts = r"You have the option to request your friends to join the Services by providing their contact information."
-    # ts = "We record calls for the purpose of monitoring our call handlers and providing appropriate training for them and to keep an accurate record of what was said during a telephone conversation in the event of further issues or complaint."
-    ts = "Image recorded by your camera."
+    senParser = SentenceParser()
 
-    # ts = ts.replace("/"," and ")
-    # for x in range(ts.find("/"), len(ts)):
-    #     if ts[x] == "/":
-    #         if x + 1 < len(ts):
-    #             if  ts[x + 1].isdigit():
-    #                 continue
-    #             else:
-    # ts = ' '.join(ts.split())
-    # print(newts)
+    # Pattern1 test
+    p1s = [
+        "Image recorded by your camera.",
+        "Using your microphone for making note via voice.",
+        "Microphone, for recording voices in the videos.",
+        "Microphone: for recording voices in the videos.",
+        "Microphone; for recording voices in the videos.",
+        "Microphone; for detecting your voice and command",
+        "Images recorded by cameras fitted to Sky's engineer vans.",
+        "Microphone; for detecting your voice and command.",
+        "Using microphone permissions for video shooting and editing",
+        "The app needs access to the camera for recording videos."
+    ]
 
-    res = senParser.parseSentence(ts)
-    # try:
-    #     res = senParser.parseSentence(ts)
-    # except Exception as e:
-    #     print(e)
-    
-    print(senParser.depParser.prettyRes(senParser.depRes))
-    for e in res:
-        print(e)
+    pts = [
+        "If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually.",
+        "The app accesses the contacts on the phone in order to display the contacts and so the app can record or ignore calls from specific contacts.",
+        "We display all the phone calls in the phone list in the form of lists, and you can dial the phone directly in the message center. In order to make you use this function normally, we need to get call record information to implement the display and edit management of the call record list, including the telephone number, the way to call (the incoming calls, the unanswered calls, the dialed and rejected calls), and the time of the call. Meanwhile, in order to help you quickly select contacts in dialing, we need to read your address book contact information.",
+        "The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms. Learn more about voice data collection.",
+        "If granted permission by a user, My Home Screen Apps uses access to a device's microphone to facilitate voice-enabled search queries and may access your deviceâs camera, photos, media, and other files.",
+        "We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates.",
+        "We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: Microphone permissions: for video shooting and editing.",
+        "Take pictures and videos absurd Labs need this permission to use your phone's camera to take pictures and videos.",
+        "This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash.",
+        "The microphone also enables voice commands for control of the console, game, or app, or to enter search terms.",
+        "When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Cameras, for shooting photos and taking videos.",
+        "We access the microphone on your device (with your permission) to record audio messages and deliver sound during video calls.",
+        "With your prior consent we will be allowed to use the microphone for songs immediate identification and lyrics synchronization.",
+        "TomTom navigation products and services need location data and other information to work correctly.",
+        "Some of our Apps offer you the option to talk to the virtual character of such Apps. All of our Apps that offer such feature will always ask you for your permission to access the microphone on your device in advance. If you decide to give us the permission, the virtual character will be able to repeat what you say to him. Please note that our Apps do not have a function to record audio, so what you say to the virtual character is not stored on our servers, it is only used by the App to repeat to you in real time. If you decide not to give us the permission to access the microphone on your device, the virtual character will not be able to repeat after you.",
+        "The Product's meeting functionality also enables you to be seen by other participants through your built-in device camera.",
+        "Cameras and photos: in order to be able to send and upload your photos from your camera, you must give us permission to access them.",
+        "Images recorded by cameras fitted to Sky's engineer vans.",
+        "The app needs access to the camera to fulfill recording videos.",
+        "If granted permission by a user, we use access to a phone's microphone to facilitate voice enabled search queries. All interaction and access to the microphone is user initiated and voice queries are not shared with third party apps or providers.",
+        "Some features like searching a contact from the search bar require access to your Address book.",
+        "including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor.",
+        "Voice control features will only be enabled if you affirmatively activate voice controls by giving us access to the microphone on your device.",
+        "The app needs access to the camera to fulfill recording videos.",
+        "Some features like searching a contact from the search bar require access to your Address book.",
+        "When you shoot or edit the photos or videos, to provide you with corresponding services, we may need you to grant the permissions for the following terminals: Microphone, for recording voices in the videos.",
+        "We collect the following permissions and corresponding information following the criterion of minimal data collection with your consent: â· Microphone permissions: for video shooting and editingï¼",
+        "Recording Call, Microphone",
+        "Used for accessing the camera or capturing images and video from the device.",
+        "The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms.",
+        "HoloLens also processes and collects data related to the HoloLens experience and device, which include cameras, microphones, and infrared sensors that enable motions and voice to navigate.",
+        "If you wish to invite your friends and contacts to use the Services, we will give you the option of either entering in their contact information manually.",
+        "As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time.",
+        "including your public profile, the lists you create, and photos, videos and voice recordings as accessed with your prior consent through your device's camera and microphone sensor",
+        "Permission to access contact information is used when you search contacts in JVSTUDIOS search bar.",
+        "Used to give sites ability to ask users to utilize microphone and used to provide voice search feature.",
+        "Some features like searching a contact from the search bar require access to your Address book.",
+        "Some features like searching a contact from the search bar require access to your Address book.",
+        "Camera; for taking selfies and pictures using voice.",
+        "For example, when using our navigation or localization apps, we must collect your precise location, speed and bearings.",
+        "About Us Studios And Locations Educating Consumers Playtest",
+        "We display all the phone calls in the phone list in the form of lists",
+        "We use the categories of information for the business and commercial purposes outlined here we use information to protect our company and constituents.\u00c2 We use contact, demographic, and site usage information to protect our company and customers.",
+        "You have the option to request your friends to join the Services by providing their contact information.",
+        "We record calls for the purpose of monitoring our call handlers and providing appropriate training for them and to keep an accurate record of what was said during a telephone conversation in the event of further issues or complaint.",
+        "The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms."
+    ]
 
-    # ds = r"As Offline Map Navigation app is a GPS based navigation application which uses your location while using the app or all the time."
-    # ds = r"the sharing and referral tools"
-    # depParser = DepParser()
-    
-    # res = depParser.parse(ds)
-    # print(depParser.prettyRes(res))
+    for ts in p1s:
+    # for ts in pts:
+        res = senParser.parseSentence(ts)
+        print(ts)
+        # print(senParser.depParser.prettyRes(senParser.depRes))
+        for e in res:
+            print(e)
+        print('\n')
 
-    # with open(r"./sentences.json", 'r', encoding="utf-8") as f:
-    # with open(r"../test.json", 'r', encoding="utf-8") as f:
-    #     allSens = json.load(f)
-
-    # with open(r"./dep_sentence_5.txt", 'w', encoding="utf-8") as f:
-    #     index = 0
-    #     resDict = []
-    #     for item in allSens:
-    #         # for item in section:
-    #         sentence = item["sentence"]
-    #         scene = item["scene"]
-    #         pi = item["PI"]
-
-    #         res = senParser.parseSentence(sentence)
-    #         parseRes = senParser.depParser.prettyRes(senParser.depRes)
-
-    #         resDict.append({
-    #             "scene": scene,
-    #             "PI": pi,
-    #             "sentence": sentence,
-    #             "parse": res,
-    #             "dep": parseRes
-    #         })
-
-    #         # write
-    #         f.write("%s. %s\n" % (str(index), sentence))
-    #         f.write("\n")
-    #         f.write("%s -> %s\n" % (str(pi), str(scene)))
-    #         f.write("\n")
-    #         for e in res:
-    #                 # f.write("%s -> %s, %s, %s, %s" % (e[0], e[1], e[2], e[3], e[4]))
-    #             try:
-    #                 f.write("%s -> %s,\t%s,\t%s,\t%s\t%s\n" % tuple(e))
-    #             except:
-    #                 f.write("error:"+ str(e))
-    #         f.write("\n")
-    #         f.write(parseRes)
-    #         f.write("\n=====================\n\n")
-    #         index += 1
-
-    # with open(r"./dep_sentence.json", 'w', encoding="utf-8") as f:
-    #     json.dump(resDict, f, indent=4)
