@@ -140,3 +140,4 @@ all*.json
 *.swo
 filter.py
 removeDupSen.py
+*.bak

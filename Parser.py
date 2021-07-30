@@ -12,14 +12,11 @@ PERM_KEYWORD_LIST = ["contact", "address book",
 
 PATTERN_1_DEP_LIST = ["obl"]
 PATTERN_1V_DEP_LIST = ["obl", "nmod", "dep"]
-# PATTERN_1_IN_BLACK_LIST = ["in", "on", "from", "with"]
 PATTERN_1_IN_BLACK_LIST = []
 
 PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass", "advcl"]
 
 FIFLTER_PATTERN = ["PRP","PRP$"]
-# FIFLTER_PRP_WORDS = ["we","you","he","she","they","it"]
-# FIFLTER_PRPS_WORDS = ["our","your","his","her","their","its"]
 
 def getPos(postag):
 
@@ -714,6 +711,37 @@ class SentenceParser():
 
         return res
 
+    def _pattern0(self, keyloc, depRes):
+        """
+            pattern [] nsubj
+            case: The Kinect microphone can enable voice chat between players during play.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+
+        for conjloc in conjlocs:
+            fvloc = self._findClosedVerb(conjloc, depRes, ["nsubj"])
+
+            deplocs = self._parseDepWord(fvloc, depRes)
+            if len(deplocs) <= 0:
+                continue
+
+            for deploc in deplocs:
+                if depRes[deploc]["dep"] != "obj":
+                    continue
+
+                finloc = self._findPhraseEnd(deploc, depRes)
+                deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                phrase = self._getPhrase(deploc, finloc, depRes)
+                phrases = phrase.split('@#$%^&')
+                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                res.append([depRes[keyloc]["dependent"], phrases, 
+                            depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc),
+                            "pattern_0(%s)" % depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+                    
+        return res
+
     def _pattern1(self, keyloc, depRes):
         """
             pattern: [SCENE\] <IN case> [PI]. [PI] {obl} [SCENE].
@@ -837,6 +865,13 @@ class SentenceParser():
         readyRes = set()
         for keyloc in keylocs:
             
+            tmpres = self.filter(self._pattern0(keyloc, depRes))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
+
             tmpres = self.filter(self._pattern1(keyloc, depRes))
             for e in tmpres:
                 hashe = hashTuple(e)
@@ -1158,17 +1193,18 @@ if __name__ == "__main__":
     ]
 
     # for ts in p1s:
-    for ts in pts:
-        print(ts)
-        res = senParser.parseSentence(ts)
-        # print(senParser.depParser.prettyRes(senParser.depRes))
-        for e in res:
-            print(e)
-        print('\n')
+    # for ts in pts:
+    #     print(ts)
+    #     res = senParser.parseSentence(ts)
+    #     # print(senParser.depParser.prettyRes(senParser.depRes))
+    #     for e in res:
+    #         print(e)
+    #     print('\n')
 
-    # ts = "We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates"
-    # print(ts + '\n')
-    # res = senParser.parseSentence(ts)
-    # print(senParser.depParser.prettyRes(senParser.depRes))
-    # for e in res:
-    #     print(e)
+    # ts = "If you wish to invite your friends and contacts to use the Services, we will give you the option of either using their contact information manually"
+    ts = "The Kinect microphone can enable voice chat between players during play."
+    print(ts + '\n')
+    res = senParser.parseSentence(ts)
+    print(senParser.depParser.prettyRes(senParser.depRes))
+    for e in res:
+        print(e)
