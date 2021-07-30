@@ -1,5 +1,4 @@
 import nltk
-import re
 from nltk.corpus.reader.wordnet import VERB
 from nltk.parse import corenlp
 from nltk.corpus import stopwords, wordnet
@@ -14,9 +13,11 @@ PATTERN_1_DEP_LIST = ["obl"]
 PATTERN_1V_DEP_LIST = ["obl", "nmod", "dep"]
 PATTERN_1_IN_BLACK_LIST = []
 
-PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass", "advcl"]
+PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass","advcl","nsubj"]
 
 FIFLTER_PATTERN = ["PRP","PRP$"]
+
+IN_WORDS_LIST = ['for','during','via']
 
 def getPos(postag):
 
@@ -223,6 +224,11 @@ class SentenceParser():
                     # 暂时全认为是介词
                     depRes[gloc]["pos"] = "IN"
 
+            if depRes[idx]['dep'] == "compound:prt" and getPos(depRes[gloc]["pos"]) == wordnet.VERB:
+                locMap[idx] = gloc
+                # 更新gov
+                depRes[gloc]["dependent"] = "%s %s" % (depRes[gloc]["dependent"], dependent)
+
         # 更新全部loc信息
         delta = 0
         for idx, gloc in enumerate(locMap):
@@ -402,6 +408,24 @@ class SentenceParser():
         if start > end:
             start, end = end, start
 
+        
+        # 介词抓取  
+        if end + 1 < len(depRes):
+            # 所有的介词都提取了
+            # if depRes[finloc + 1]["pos"] == "IN" and depRes[finloc + 1]["dep"] == "case":
+            # 只考虑for via 和 during
+            if depRes[end + 1]["dependent"] in IN_WORDS_LIST and depRes[end + 1]["pos"] == "IN" and depRes[end + 1]["dep"] == "case":
+                govloc = depRes[end + 1]["govloc"]
+                if end < govloc:
+                    end = govloc
+
+        # 是否自身为conj
+        for dist in range(start, end + 1):
+            govloc = depRes[dist]["govloc"]
+            dep = depRes[dist]["dep"]
+            if govloc != dist and dep == "conj" and getPos(depRes[govloc]['pos']) == getPos(depRes[dist]['pos']) and govloc < start:
+                start = govloc
+
         # if getPos(depRes[finloc]["pos"]) == wordnet.VERB and depRes[finloc]["dep"] == "amod":
         #     govloc = depRes[finloc]["govloc"]
         #     if not isInvalidPos(depRes[govloc]["pos"]):
@@ -477,7 +501,7 @@ class SentenceParser():
         # 介词抓取
         if finloc + 1 < len(depRes):
             # 只考虑via 和 during
-            if depRes[finloc + 1]["dependent"] == "via" or depRes[finloc + 1]["dependent"] == "during":
+            if depRes[finloc + 1]["dependent"] in IN_WORDS_LIST and depRes[finloc + 1]["pos"] == "IN" and depRes[finloc + 1]["dep"] == "case":
                 govloc = depRes[finloc + 1]["govloc"]
                 if finloc < govloc:
                     finloc = govloc
@@ -652,6 +676,9 @@ class SentenceParser():
             else:
                 if dep in limitDeps:
                     return govloc
+                elif depRes[govloc]["dep"] == "acl":
+                    wloc = depRes[govloc]["govloc"]
+                    continue
                 break
 
         return None
@@ -659,12 +686,19 @@ class SentenceParser():
     def _pattern2(self, keyloc, depRes):
         """
            句式: verb + PI to {do SCENE}
+                 SCENE verb + PI
 
            pattern: verb {obj} PI to SCENE; verb {xcomp} SCENE
            case: Use your camera to take photos, no data is collected.
 
            pattern PI {nsubj:pass} verb to SCENE; verb {xcomp} SCENE
            case: CAMERA is required to let the app take pictures.
+
+           pattern SCENE {nsubj} verb {obj} PI.
+           case: TomTom navigation products and services need location data and other information to work correctly.
+
+           pattern verb {obj} PI WRB/IN SCENE.
+           case: We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates.
         """
 
         res = []
