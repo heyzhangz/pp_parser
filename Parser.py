@@ -1,5 +1,4 @@
 import nltk
-import re
 from nltk.corpus.reader.wordnet import VERB
 from nltk.parse import corenlp
 from nltk.corpus import stopwords, wordnet
@@ -15,11 +14,7 @@ PATTERN_1V_DEP_LIST = ["obl", "nmod", "dep"]
 # PATTERN_1_IN_BLACK_LIST = ["in", "on", "from", "with"]
 PATTERN_1_IN_BLACK_LIST = []
 
-<<<<<<< HEAD
 PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass","advcl","nsubj"]
-=======
-PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass", "advcl"]
->>>>>>> 3b9a737ab1b9dc98c557d9f7b11417019ec4de90
 
 FIFLTER_PATTERN = ["PRP","PRP$"]
 # FIFLTER_PRP_WORDS = ["we","you","he","she","they","it"]
