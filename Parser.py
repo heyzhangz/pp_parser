@@ -9,11 +9,7 @@ PERM_KEYWORD_LIST = ["contact", "address book",
                      "location", "longitude", "latitude", "GPS",
                      "SMS", "phone"]
 
-PATTERN_1_DEP_LIST = ["obl"]
-PATTERN_1V_DEP_LIST = ["obl", "nmod", "dep"]
-PATTERN_1_IN_BLACK_LIST = []
-
-PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass","advcl","nsubj"]
+PATTERN_2_DEP_LIST = ["xcomp", "nsubj:pass", "advcl", "nsubj"]
 
 FIFLTER_PATTERN = ["PRP","PRP$"]
 
@@ -320,7 +316,7 @@ class SentenceParser():
 
         # 找起始词
         start = wloc
-        if depRes[wloc]["dep"] == "conj":
+        if depRes[wloc]["dep"] == "conj" or depRes[wloc]["dep"] == "csubj:pass":
             start = depRes[wloc]["govloc"]
             conjlocs.append(start)
         
@@ -613,54 +609,6 @@ class SentenceParser():
                         phrase.append(depRes[idx2]["dependent"])
                 else:
                     phrase.append(depRes[idx]["dependent"])
-
-        # for idx in range(start, end + 1):
-        #     if (depRes[idx]["pos"] == "," and depRes[idx]["dependent"] != "/") or depRes[idx]["dep"] == "cc":
-        #         phrase.append("@#$%^&")
-        #     else:
-        #         # 连词 分开
-        #         if depRes[idx]["dep"] == "conj":
-        #             # 找到第一个连词
-        #             conjs = depRes[idx]["govloc"]
-        #             # 补全： 本身是名词 补全两种：前面的compond（在一开始时完成） 前面的动词或者介词词组
-        #             # 连词后面补全暂时不考虑
-        #             if getPos(depRes[conjs]["pos"]) == wordnet.NOUN and getPos(depRes[idx]["pos"]) == wordnet.NOUN:
-        #                 # obj 为前面有动词的情况 或者 介词词组 nmod 的情况
-        #                 if (depRes[conjs]["dep"] == "obj" and getPos(depRes[depRes[conjs]["govloc"]]["pos"]) == wordnet.VERB) or depRes[conjs]["dep"] == "nmod": 
-        #                     for idx2 in range(depRes[conjs]["govloc"], conjs):
-        #                         # 排除：microphone permission : for recording …… 这种前面介词词组的误差  这里介词只允许是of
-        #                         if depRes[idx2]["pos"] == "IN" and depRes[idx2]["dependent"] != "of" or depRes[idx2]["dep"] == "punct":
-        #                             phrase = phrase[:(depRes[conjs]["govloc"] - idx2)]
-        #                             break
-        #                         else:
-        #                             phrase.append(depRes[idx2]["dependent"])
-        #                 else:
-        #                     # 还有一种情况是前面是动词 但是amod 格式 组合  有两种解决方案 一种和compound一样在前面合并 一种在这里找到
-        #                     isAmod = 0
-        #                     for idx2 in range(depRes[conjs]["govloc"], conjs):
-        #                         if depRes[idx2]["dep"] == "amod" and depRes[idx2]["govloc"] == conjs and conjs - idx2 <=2:
-        #                             isAmod = 1
-        #                         if isAmod == 1:
-        #                             phrase.append(depRes[idx2]["dependent"])
-                    # else:
-                    #     if getPos(depRes[conjs]["pos"]) == wordnet.VERB and getPos(depRes[idx]["pos"]) == wordnet.VERB:
-                    #         for dist in range(end + 1, len(depRes)):
-                    #             right = dist    
-                    #             if right < len(depRes):
-                    #                 govloc = depRes[right]["govloc"]
-                    #                 if govloc == conjs and not isInvalidPos(depRes[right]["pos"]):
-                    #                     finloc = right
-                    #                     conjEnd = finloc
-                    #                     for dist2 in range(finloc, finloc + 1):
-                    #                         for idx in range(dist2, len(depRes)):
-                    #                             govloc = depRes[idx]["govloc"]
-                    #                             dep = depRes[idx]["dep"]
-                    #                             if govloc == right and dep == "conj" and idx > conjEnd:
-                    #                                 conjEnd = idx
-                    #                     finloc = conjEnd
-                    #                     for idx2 in range(right, conjEnd):
-                    #                         phrase.append(depRes[idx2]["dependent"])
-                    #                     break
         
         return ' '.join(phrase)
     
@@ -676,28 +624,357 @@ class SentenceParser():
             else:
                 if dep in limitDeps:
                     return govloc
-                elif depRes[govloc]["dep"] == "acl":
+                elif depRes[govloc]["dep"] in ["acl"]:
                     wloc = depRes[govloc]["govloc"]
                     continue
                 break
 
         return None
 
+    def isRepeat(self, start, end, conjlocs):
+        
+        delta = end - start
+        for conj in conjlocs:
+            if 0 <= conj - start <= delta:
+                return True
+        
+        return False
+
+    def _pattern0(self, keyloc, depRes):
+        """
+            pattern: (PI) [verb]{enable} [verb]{doing} (SCENE)
+            case: The location infomation can enable navigation.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+
+        for conjloc in conjlocs:
+            fvloc = self._findClosedVerb(conjloc, depRes, ["nsubj"])
+
+            deplocs = self._parseDepWord(fvloc, depRes)
+            if len(deplocs) <= 0:
+                continue
+
+            for deploc in deplocs:
+                if depRes[deploc]["dep"] != "obj":
+                    continue
+
+                # 判断场景目标词的词性
+                deppos = getPos(depRes[deploc]["pos"])
+                if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                    continue
+
+                finloc = self._findPhraseEnd(deploc, depRes)
+                deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                phrase = self._getPhrase(deploc, finloc, depRes)
+                phrases = phrase.split('@#$%^&')
+                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                res.append([depRes[keyloc]["dependent"], phrases, 
+                            depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc),
+                            "pattern_0(%s)" % depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+                    
+        return res
+
+    def _pattern1(self, keyloc, depRes):
+        """
+            pattern: (PI) [verb]{enable} [verb]{doing} (SCENE)
+            case: The location infomation can enable optimizing navigation.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+
+        for conjloc in conjlocs:
+            fvloc = self._findClosedVerb(conjloc, depRes, ["nsubj"])
+
+            depvlocs = []
+            depvlocs.extend(self._findTargetDepWord(fvloc, depRes, ["dep", "nmod"]))
+
+            for depvloc in depvlocs:
+                
+                deplocs = self._parseDepWord(depvloc, depRes)
+                if len(deplocs) <= 0:
+                    continue
+                for deploc in deplocs:
+                    
+                    if depRes[deploc]["dep"] not in ["obj"]:
+                        continue
+                    
+                    # 判断场景目标词的词性
+                    deppos = getPos(depRes[deploc]["pos"])
+                    if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                        continue
+
+                    finloc = self._findPhraseEnd(deploc, depRes)
+                    deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                    if self.isRepeat(deploc, finloc, [conjloc]):
+                        continue
+
+                    phrase = self._getPhrase(deploc, finloc, depRes)
+                    phrases = phrase.split('@#$%^&')
+                    phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                    res.append([depRes[keyloc]["dependent"], phrases, 
+                                depRes[conjloc]["dep"], "%s[%d]" % (depRes[depvloc]["dependent"], depvloc),
+                                "pattern_1(%s)" % depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+                    
+        return res
+
     def _pattern2(self, keyloc, depRes):
         """
-           句式: verb + PI to {do SCENE}
-                 SCENE verb + PI
+            pattern: (SCENE) [prep]{by} (PI)
+            case: Image recorded by your camera.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+        
+        for conjloc in conjlocs:
 
-           pattern: verb {obj} PI to SCENE; verb {xcomp} SCENE
-           case: Use your camera to take photos, no data is collected.
+            dep = depRes[conjloc]["dep"].split(':')[0]
+            if dep != "obl":
+                continue
 
-           pattern PI {nsubj:pass} verb to SCENE; verb {xcomp} SCENE
-           case: CAMERA is required to let the app take pictures.
+            deploc = depRes[conjloc]["govloc"]
+            # 判断 govloc 和 deploc 之间是否存在介词
+            hasPreposision = False
+            for loc in range(deploc + 1, conjloc):
+                if depRes[loc]["dep"] == "case" and depRes[loc]["pos"] == "IN":
+                    hasPreposision = True
+                    break
+            if not hasPreposision:
+                continue
 
-           pattern SCENE {nsubj} verb {obj} PI.
+            # 判断场景目标词的词性
+            deppos = getPos(depRes[deploc]["pos"])
+            if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                continue
+
+            finloc = self._findPhraseEnd(deploc, depRes)
+            deploc,finloc = self._getWholePhrase(deploc, finloc, depRes)
+            if self.isRepeat(deploc, finloc, [conjloc]):
+                continue
+
+            phrase = self._getPhrase(deploc, finloc, depRes)
+            phrases = phrase.split('@#$%^&')
+            phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+            res.append([depRes[keyloc]["dependent"], phrases, 
+                        depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc),
+                        "pattern_2(%s)" % depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+
+        return res
+    
+    def _pattern3(self, keyloc, depRes):
+        """
+            pattern: (PI) [prep]{for} (SCENE)
+            case: Microphone, for recording voices in the videos.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+
+        for conjloc in conjlocs:
+            
+            deplocs = []
+            deplocs.extend(self._findTargetDepWord(conjloc, depRes, ["dep", "nmod", "obl"]))
+
+            for deploc in deplocs:
+
+                if deploc in conjlocs:
+                    continue
+
+                # 判断 govloc 和 deploc 之间是否存在介词
+                hasPreposision = False
+                for loc in range(conjloc + 1, deploc):
+                    if depRes[loc]["dep"] == "case" and depRes[loc]["pos"] == "IN":
+                        hasPreposision = True
+                        break
+                if not hasPreposision:
+                    continue
+
+                # 判断场景目标词的词性
+                deppos = getPos(depRes[deploc]["pos"])
+                if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                    continue
+
+                finloc = self._findPhraseEnd(deploc, depRes)
+                tdeploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                if self.isRepeat(tdeploc, finloc, [conjloc]):
+                    continue
+
+                phrase = self._getPhrase(tdeploc, finloc, depRes)
+                phrases = phrase.split('@#$%^&')
+                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                res.append([depRes[keyloc]["dependent"], phrases, 
+                            depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc), 
+                            "pattern_3(%s)" % depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+
+        return res
+    
+    def _pattern4(self, keyloc, depRes):
+        """
+            pattern: [verb]{use} (PI) [prep]{for} (SCENE)
+            case: Using your microphone for making note via voice.
+        """
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+
+        for conjloc in conjlocs:
+
+            vloc = self._findDirectVerb(conjloc, depRes)
+            deplocs = []
+            deplocs.extend(self._findTargetDepWord(vloc, depRes, ["obl", "nmod", "det"]))
+
+            for deploc in deplocs:
+
+                if deploc in conjlocs:
+                    continue
+
+                # 判断 govloc 和 deploc 之间是否存在介词
+                hasPreposision = False
+                for loc in range(conjloc + 1, deploc):
+                    if depRes[loc]["dep"] == "case" and depRes[loc]["pos"] == "IN":
+                        hasPreposision = True
+                        break
+                if not hasPreposision:
+                    continue
+
+                # 判断场景目标词的词性
+                deppos = getPos(depRes[deploc]["pos"])
+                if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                    continue
+
+                finloc = self._findPhraseEnd(deploc, depRes)
+                tdeploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                if self.isRepeat(tdeploc, finloc, [conjloc]):
+                    continue
+
+                phrase = self._getPhrase(tdeploc, finloc, depRes)
+                phrases = phrase.split('@#$%^&')
+                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                res.append([depRes[keyloc]["dependent"], phrases, 
+                            depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc), 
+                            "pattern_4(%s)" % depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+
+        return res
+
+    def _pattern5(self, keyloc, depRes):
+        """
+           pattern: [verb]{use} (PI) [prep]{to} (SCENE)
+           case: CAMERA is required to let the app take pictures.
+        """
+
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+
+        for conjloc in conjlocs:
+            fvloc = self._findClosedVerb(conjloc, depRes, ["obj", "nsubj:pass"])
+            if not fvloc:
+                continue
+
+            fvlocs = self._findConjWord(fvloc, depRes)
+            fvlocs.append(fvloc)
+
+            for fvloc in fvlocs:
+                deplocs = self._parseDepWord(fvloc, depRes)
+                if len(deplocs) == 0:
+                    continue
+                        
+                for deploc in deplocs:
+                    
+                    if deploc == keyloc:
+                        continue
+
+                    dep = depRes[deploc]["dep"]
+                    if dep != "xcomp":
+                        continue
+
+                    # 判断场景目标词的词性
+                    deppos = getPos(depRes[deploc]["pos"])
+                    if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                        continue
+
+                    # 判断 govloc 和 deploc 之间是否存在介词
+                    hasPreposision = False
+                    for loc in range(fvloc + 1, deploc):
+                        if depRes[loc]["pos"] in ["IN", "TO"]:
+                            hasPreposision = True
+                            break
+                    if not hasPreposision:
+                        continue
+
+                    finloc = self._findPhraseEnd(deploc, depRes)
+                    deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                    if self.isRepeat(deploc, finloc, [conjloc]):
+                        continue
+
+                    phrase = self._getPhrase(deploc, finloc, depRes)
+                    phrases = phrase.split('@#$%^&')
+                    phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                    res.append([depRes[keyloc]["dependent"], phrases, 
+                                depRes[deploc]["dep"],"%s[%d]" % (depRes[fvloc]["dependent"], fvloc), 
+                                "pattern_5(%s)" % depRes[deploc]["dep"], 
+                                "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+
+        return res
+
+    def _pattern6(self, keyloc, depRes):
+        """
+           pattern: (SCENE) [verb]{need} (PI)
            case: TomTom navigation products and services need location data and other information to work correctly.
+        """
 
-           pattern verb {obj} PI WRB/IN SCENE.
+        res = []
+        conjlocs = self._findConjWord(keyloc, depRes)
+        conjlocs.append(keyloc)
+
+        for conjloc in conjlocs:
+            fvloc = self._findClosedVerb(conjloc, depRes, ["obj", "nsubj:pass"])
+            if not fvloc:
+                continue
+
+            fvlocs = self._findConjWord(fvloc, depRes)
+            fvlocs.append(fvloc)
+
+            for fvloc in fvlocs:
+                deplocs = self._parseDepWord(fvloc, depRes)
+                if len(deplocs) == 0:
+                    continue
+                        
+                for deploc in deplocs:
+                    
+                    if deploc == keyloc:
+                        continue
+
+                    dep = depRes[deploc]["dep"]
+                    if dep != "nsubj":
+                        continue
+
+                    # 判断场景目标词的词性
+                    deppos = getPos(depRes[deploc]["pos"])
+                    if deppos != wordnet.NOUN and deppos != wordnet.VERB:
+                        continue
+
+                    finloc = self._findPhraseEnd(deploc, depRes)
+                    tdeploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
+                    if self.isRepeat(tdeploc, finloc, [conjloc]):
+                        continue                    
+
+                    phrase = self._getPhrase(tdeploc, finloc, depRes)
+                    phrases = phrase.split('@#$%^&')
+                    phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
+                    res.append([depRes[keyloc]["dependent"], phrases, 
+                                depRes[deploc]["dep"],"%s[%d]" % (depRes[fvloc]["dependent"], fvloc), 
+                                "pattern_6(%s)" % depRes[deploc]["dep"], 
+                                "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
+
+        return res
+        
+    def _pattern7(self, keyloc, depRes):
+        """
+           pattern: [verb]{collect} (PI) [ADVMOD]{when} (SCENE)
            case: We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates.
         """
 
@@ -724,7 +1001,7 @@ class SentenceParser():
                         continue
 
                     dep = depRes[deploc]["dep"]
-                    if dep not in PATTERN_2_DEP_LIST:
+                    if dep != "advcl":
                         continue
 
                     # 判断场景目标词的词性
@@ -732,142 +1009,27 @@ class SentenceParser():
                     if deppos != wordnet.NOUN and deppos != wordnet.VERB:
                         continue
 
+                    # 判断 govloc 和 deploc 之间是否存在介词
+                    hasPreposision = False
+                    for loc in range(0, deploc):
+                        if depRes[loc]["pos"] in ["IN", "TO", "WRB"]:
+                            hasPreposision = True
+                            break
+                    if not hasPreposision:
+                        continue
+
                     finloc = self._findPhraseEnd(deploc, depRes)
                     deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-                    phrase = self._getPhrase(deploc, finloc, depRes)
+                    if self.isRepeat(deploc, finloc, [conjloc]):
+                        continue                    
 
+                    phrase = self._getPhrase(deploc, finloc, depRes)
                     phrases = phrase.split('@#$%^&')
                     phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
                     res.append([depRes[keyloc]["dependent"], phrases, 
                                 depRes[deploc]["dep"],"%s[%d]" % (depRes[fvloc]["dependent"], fvloc), 
-                                "pattern_2(%s)" % depRes[deploc]["dep"], 
+                                "pattern_7(%s)" % depRes[deploc]["dep"], 
                                 "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
-
-        return res
-
-    def _pattern0(self, keyloc, depRes):
-        """
-            pattern [] nsubj
-            case: The Kinect microphone can enable voice chat between players during play.
-        """
-        res = []
-        conjlocs = self._findConjWord(keyloc, depRes)
-        conjlocs.append(keyloc)
-
-        for conjloc in conjlocs:
-            fvloc = self._findClosedVerb(conjloc, depRes, ["nsubj"])
-
-            deplocs = self._parseDepWord(fvloc, depRes)
-            if len(deplocs) <= 0:
-                continue
-
-            for deploc in deplocs:
-                if depRes[deploc]["dep"] != "obj":
-                    continue
-
-                finloc = self._findPhraseEnd(deploc, depRes)
-                deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-                phrase = self._getPhrase(deploc, finloc, depRes)
-                phrases = phrase.split('@#$%^&')
-                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
-                res.append([depRes[keyloc]["dependent"], phrases, 
-                            depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc),
-                            "pattern_0(%s)" % depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
-                    
-        return res
-
-    def _pattern1(self, keyloc, depRes):
-        """
-            pattern: [SCENE\] <IN case> [PI]. [PI] {obl} [SCENE].
-            case: Image recorded by your camera.
-        """
-        res = []
-        conjlocs = self._findConjWord(keyloc, depRes)
-        conjlocs.append(keyloc)
-        
-        for conjloc in conjlocs:
-
-            dep = depRes[conjloc]["dep"].split(':')[0]
-            if dep not in PATTERN_1_DEP_LIST:
-                continue
-
-            deploc = depRes[conjloc]["govloc"]
-            # 判断 govloc 和 deploc 之间是否存在介词
-            hasPreposision = False
-            for loc in range(deploc + 1, conjloc):
-                if depRes[loc]["dep"] == "case" and depRes[loc]["pos"] == "IN" and \
-                   depRes[loc]["dependent"] not in PATTERN_1_IN_BLACK_LIST:
-                    hasPreposision = True
-                    break
-            if not hasPreposision:
-                continue
-
-            # 判断场景目标词的词性
-            deppos = getPos(depRes[deploc]["pos"])
-            if deppos != wordnet.NOUN and deppos != wordnet.VERB:
-                continue
-
-            finloc = self._findPhraseEnd(deploc, depRes)
-            deploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-            phrase = self._getPhrase(deploc, finloc, depRes)
-            phrases = phrase.split('@#$%^&')
-            phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
-            res.append([depRes[keyloc]["dependent"], phrases, 
-                        depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc),
-                        "pattern_1(%s)" % depRes[conjloc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
-
-        return res
-
-    def _pattern1V(self, keyloc, depRes):
-        """
-            pattern: [SCENE] <IN case> [use PI]. [SCENE] {obl} [use].
-            case: Using your microphone for making note via voice.
-
-            pattern: [PI] <IN case> [SCENE]. [SCENE] {nmod\dep} [PI].
-            case: Using your microphone for making note via voice.
-        """
-        res = []
-        conjlocs = self._findConjWord(keyloc, depRes)
-        conjlocs.append(keyloc)
-        
-        for conjloc in conjlocs:
-            vloc = self._findDirectVerb(conjloc, depRes)
-        if vloc:
-            conjlocs.append(vloc)
-
-        for conjloc in conjlocs:
-            
-            deplocs = []
-            deplocs.extend(self._findTargetDepWord(conjloc, depRes, PATTERN_1V_DEP_LIST))
-
-            for deploc in deplocs:
-
-                if deploc in conjlocs:
-                    continue
-
-                # 判断 govloc 和 deploc 之间是否存在介词
-                hasPreposision = False
-                for loc in range(conjloc + 1, deploc):
-                    if depRes[loc]["dep"] == "case" and depRes[loc]["pos"] == "IN" and \
-                       depRes[loc]["dependent"] not in PATTERN_1_IN_BLACK_LIST:
-                        hasPreposision = True
-                        break
-                if not hasPreposision:
-                    continue
-
-                # 判断场景目标词的词性
-                deppos = getPos(depRes[deploc]["pos"])
-                if deppos != wordnet.NOUN and deppos != wordnet.VERB:
-                    continue
-
-                finloc = self._findPhraseEnd(deploc, depRes)
-                tdeploc,finloc = self._getWholePhrase(deploc,finloc,depRes)
-                phrase = self._getPhrase(tdeploc, finloc, depRes)
-                phrases = phrase.split('@#$%^&')
-                phrases = [i.strip() for i in phrases if(len(str(i.strip()))!=0)]
-                res.append([depRes[keyloc]["dependent"], phrases, 
-                            depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc), 
-                            "pattern_1v(%s)" % depRes[deploc]["dep"], "%s[%d]" % (depRes[conjloc]["dependent"], conjloc)])
 
         return res
 
@@ -913,14 +1075,42 @@ class SentenceParser():
                     res.append(e)
                     readyRes.add(hashe)
             
-            tmpres = self.filter(self._pattern1V(keyloc, depRes))
+            tmpres = self.filter(self._pattern2(keyloc, depRes))
             for e in tmpres:
                 hashe = hashTuple(e)
                 if hashe not in readyRes:
                     res.append(e)
                     readyRes.add(hashe)
 
-            tmpres = self.filter(self._pattern2(keyloc, depRes))
+            tmpres = self.filter(self._pattern3(keyloc, depRes))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
+
+            tmpres = self.filter(self._pattern4(keyloc, depRes))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
+
+            tmpres = self.filter(self._pattern5(keyloc, depRes))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
+
+            tmpres = self.filter(self._pattern6(keyloc, depRes))
+            for e in tmpres:
+                hashe = hashTuple(e)
+                if hashe not in readyRes:
+                    res.append(e)
+                    readyRes.add(hashe)
+
+            tmpres = self.filter(self._pattern7(keyloc, depRes))
             for e in tmpres:
                 hashe = hashTuple(e)
                 if hashe not in readyRes:
@@ -942,45 +1132,6 @@ class SentenceParser():
 if __name__ == "__main__":
 
     senParser = SentenceParser()
-
-    # Pattern1 test
-    p1s = [
-        "Image recorded by your camera.",
-        "Using your microphone for making note via voice.",
-        "Microphone, for recording voices in the videos.",
-        "Microphone: for recording voices in the videos.",
-        "Microphone; for recording voices in the videos.",
-        "Microphone; for detecting your voice and command,",
-        "Microphone; for detecting your voice and command",
-        "Images recorded by cameras fitted to Sky's engineer vans.",
-        "Microphone; for detecting your voice and command.",
-        "Using microphone permissions for video shooting and editing",
-        "The app needs access to the camera for recording videos.",
-        "CAMERA permission so you can take photo from your phone's camera.",
-        "With your prior consent we will be allowed to use the microphone for songs immediate identification and lyrics synchronization.",
-        "for example, where your camera is enabled in videoconference sessions that are recorded for later viewing.",
-        "The headset's microphones enable voice commands for navigation, controlling apps, or to enter search terms.",
-        "Cameras and photos: in order to be able to send and upload your photos from your camera, you must give us permission to access them.",
-        "we may record your image through security cameras when you visit ASUS Royal Club repair stations and ASUS offices.",
-    ]
-
-    p2s = [
-        "If granted permission by a user, My Home Screen Apps uses access to a device's microphone to facilitate voice-enabled search queries and may access your devices camera, photos, media, and other files.",
-        # v + PI to do <use> -> obj 
-        "For example: we or a third party may use your location information to provide you with weather forecast push, geographic location navigation and other related information services;",
-        "This permission allows APPSTARSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash.",
-        "This permission allows JVSTUDIOS to use your device's camera to take photos / videos and turn ON/OFF Camera Flash. We do not save or upload your photos/videos.",
-        "Call recorder uses your phone's microphone and call audio source to record calls. It does not transfer any audio or voice data to us or to any third party. It can upload recording files to your account in cloud services if you use any in Premium version.",
-        "android.permission. RECORD_AUDIO use camera phone to take short video support feature edit and make video",
-        "For example, a photo editing app might access your device's camera to let you take a new photo or access photos or videos stored on your device for editing.",
-        "CAMERA -- Use your camera to take photos, no data is collected.",
-        "Coinoscope mobile application uses a phone camera to capture images of coins.",
-        "Camera for Android asks for CAMERA permissions is for using the camera to take photoes and record videos.",
-        # PI + v[pass] to do <nsubj:pass>
-        "The microphone access is required to record voice during the composing process under the following conditions: \"MIC\" button has been tapped on.",
-        "CAMERA is required to let the app take pictures",
-        "If the user wishes to use the Services which include location features, such as the recording of a trail or of a point of interest or the navigation through a downloaded trail, the Services may imply the processing of the location of the user, which will be used for the purposes established hereunder and to allow or improve the Service."
-    ]
 
     pts = [
         "We may also collect contact information for other individuals when you use the sharing and referral tools available within some of our Services to forward content or offers to your friends and associates.",
@@ -1226,17 +1377,15 @@ if __name__ == "__main__":
         "We collect data necessary to process your payment if you make purchases, such as your payment instrument number (such as a credit card number), and the security code associated with your payment instrument.",
     ]
 
-    # for ts in p1s:
-    # for ts in pts:
-    #     print(ts)
+    # for idx, ts in enumerate(pts):
+    #     print("%d. %s" % (idx, ts))
     #     res = senParser.parseSentence(ts)
     #     # print(senParser.depParser.prettyRes(senParser.depRes))
     #     for e in res:
     #         print(e)
     #     print('\n')
 
-    # ts = "If you wish to invite your friends and contacts to use the Services, we will give you the option of either using their contact information manually"
-    ts = "The Kinect microphone can enable voice chat between players during play."
+    ts = "ACR must use your phone's microphone and call audio source to record calls."
     print(ts + '\n')
     res = senParser.parseSentence(ts)
     print(senParser.depParser.prettyRes(senParser.depRes))
